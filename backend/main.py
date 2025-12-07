@@ -95,3 +95,43 @@ async def export_video(project: Project):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/merge")
+async def merge_clips(project: Project):
+    """
+    Renders the provided clips into a single new video file.
+    Returns an asset that can be used as a single clip.
+    """
+    try:
+        merge_id = str(uuid.uuid4())
+        merge_filename = f"merged_{merge_id}.mp4"
+        merge_path = os.path.join(UPLOAD_DIR, merge_filename)
+        
+        has_clips = any(len(t.clips) > 0 for t in project.tracks)
+        if not has_clips:
+            raise HTTPException(status_code=400, detail="No clips to merge")
+
+        result = render_project(project, merge_path, preset='fast', crf=23)
+        if not result:
+            raise HTTPException(status_code=500, detail="Merge render failed")
+        
+        # Get duration of the merged file
+        duration = 10.0
+        try:
+            probe = ffmpeg.probe(merge_path)
+            duration = float(probe['format']['duration'])
+        except Exception as e:
+            print(f"Error probing merged file: {e}")
+
+        return {
+            "id": merge_id,
+            "filename": merge_filename,
+            "url": f"/uploads/{merge_filename}",
+            "type": "video",
+            "duration": duration
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))

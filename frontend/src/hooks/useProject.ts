@@ -35,6 +35,23 @@ export function useProject() {
     }
   };
 
+  // Upload recorded audio blob
+  const uploadRecording = async (blob: Blob): Promise<UploadResponse | undefined> => {
+    const formData = new FormData();
+    const filename = `recording_${Date.now()}.webm`;
+    formData.append('file', blob, filename);
+    
+    try {
+        const res = await axios.post(`${API_URL}/upload`, formData);
+        const asset: UploadResponse = res.data;
+        setLibrary(prev => [...prev, asset]);
+        return asset;
+    } catch (e) {
+        console.error("Recording upload failed", e);
+        return undefined;
+    }
+  };
+
   const addClip = (trackId: string, asset: UploadResponse, startTime: number) => {
     setProject(prev => {
         let newTracks = [...prev.tracks];
@@ -98,12 +115,17 @@ export function useProject() {
         } else {
             const targetTrackIndex = newTracks.findIndex(t => t.id === trackId);
             if (targetTrackIndex !== -1) {
+                 // Place audio at the end of existing clips
+                 let actualStart = startTime;
+                 const maxEnd = newTracks[targetTrackIndex].clips.reduce((max, c) => Math.max(max, c.end_time), 0);
+                 actualStart = Math.max(startTime, maxEnd);
+
                  const newClip: Clip = {
                     id: uuidv4(),
                     track_id: trackId,
                     source_path: asset.url.replace('/uploads/', 'media/uploads/'),
-                    start_time: startTime,
-                    end_time: startTime + duration,
+                    start_time: actualStart,
+                    end_time: actualStart + duration,
                     source_start: 0,
                     type: 'audio',
                     volume: 1.0,
@@ -145,6 +167,7 @@ export function useProject() {
                           if (updates.end_time !== undefined) linkedUpdates.end_time = updates.end_time;
                           if (updates.source_start !== undefined) linkedUpdates.source_start = updates.source_start;
                           if (updates.speed !== undefined) linkedUpdates.speed = updates.speed;
+                          if (updates.volume !== undefined) linkedUpdates.volume = updates.volume;
                           
                           return { ...c, ...linkedUpdates };
                       }
@@ -278,6 +301,84 @@ export function useProject() {
       });
   };
 
+  const mergeClips = async (trackId: string, clipIds: string[]) => {
+      // Get current project state
+      const currentProject = project;
+      const track = currentProject.tracks.find(t => t.id === trackId);
+      if (!track) return;
+
+      const clipsToMerge = track.clips.filter(c => clipIds.includes(c.id));
+      if (clipsToMerge.length < 2) return;
+
+      // Check if any clips are linked - don't allow merging linked clips
+      const hasLinkedClips = clipsToMerge.some(c => c.linked_id);
+      if (hasLinkedClips) {
+          alert("Cannot merge linked clips.\n\nPlease unlink the video and audio first (right-click → 'Unlink Audio/Video'), then merge the video clips and audio clips separately.");
+          return;
+      }
+
+      // Sort by time
+      clipsToMerge.sort((a, b) => a.start_time - b.start_time);
+
+      // Calculate the timeline offset (normalize to start at 0)
+      const minStart = clipsToMerge[0].start_time;
+      
+      // Create a mini-project for rendering
+      const normalizedClips = clipsToMerge.map(c => ({
+          ...c,
+          start_time: c.start_time - minStart,
+          end_time: c.end_time - minStart
+      }));
+
+      const miniProject: Project = {
+          id: uuidv4(),
+          tracks: [
+              { id: 'merge-video', type: 'video', clips: track.type === 'video' ? normalizedClips : [] },
+              { id: 'merge-av', type: 'av', clips: track.type === 'av' ? normalizedClips : [] },
+              { id: 'merge-audio', type: 'audio', clips: track.type === 'audio' ? normalizedClips : [] }
+          ],
+          duration: 0
+      };
+
+      try {
+          // Call the server to render and merge
+          const res = await axios.post(`${API_URL}/merge`, miniProject);
+          const newAsset: UploadResponse = res.data;
+          
+          // Add to library
+          setLibrary(prev => [...prev, newAsset]);
+
+          // Update project: remove old clips, add new merged clip
+          setProject(prev => {
+              const newClipId = uuidv4();
+              const newClip: Clip = {
+                  id: newClipId,
+                  track_id: trackId,
+                  source_path: newAsset.url.replace('/uploads/', 'media/uploads/'),
+                  start_time: minStart,
+                  end_time: minStart + newAsset.duration,
+                  source_start: 0,
+                  type: track.type === 'video' ? 'video' : 'audio',
+                  volume: 1.0,
+                  speed: 1.0
+              };
+
+              const newTracks = prev.tracks.map(t => {
+                  if (t.id === trackId) {
+                      const remaining = t.clips.filter(c => !clipIds.includes(c.id));
+                      return { ...t, clips: [...remaining, newClip] };
+                  }
+                  return t;
+              });
+
+              return { ...prev, tracks: newTracks };
+          });
+      } catch (e) {
+          console.error("Merge failed", e);
+          alert("Merge failed. Check console for details.");
+      }
+  };
+
   // Auto-Preview Logic
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -312,10 +413,12 @@ export function useProject() {
     previewUrl,
     isRendering,
     uploadFile,
+    uploadRecording,
     addClip,
     updateClip,
     deleteClip,
     unlinkClip,
-    splitClip
+    splitClip,
+    mergeClips
   };
 }

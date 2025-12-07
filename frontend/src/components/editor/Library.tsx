@@ -1,18 +1,60 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { UploadResponse } from '@/types';
-import { Button } from '@/components/ui/button'; // Assuming shadcn button exists
+import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Mic, Square } from 'lucide-react';
 
 interface LibraryProps {
     items: UploadResponse[];
     onUpload: (file: File) => void;
     onAddToTimeline: (item: UploadResponse) => void;
+    onRecordAudio: (blob: Blob) => Promise<UploadResponse | undefined>;
 }
 
-export function Library({ items, onUpload, onAddToTimeline }: LibraryProps) {
+export function Library({ items, onUpload, onAddToTimeline, onRecordAudio }: LibraryProps) {
+    const [isRecording, setIsRecording] = useState(false);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             onUpload(e.target.files[0]);
+        }
+    };
+
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mediaRecorder = new MediaRecorder(stream);
+            mediaRecorderRef.current = mediaRecorder;
+            audioChunksRef.current = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunksRef.current.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                stream.getTracks().forEach(track => track.stop());
+                
+                // Upload the recording
+                await onRecordAudio(audioBlob);
+                setIsRecording(false);
+            };
+
+            mediaRecorder.start();
+            setIsRecording(true);
+        } catch (err) {
+            console.error('Error accessing microphone:', err);
+            alert('Could not access microphone. Please ensure you have granted permission.');
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && isRecording) {
+            mediaRecorderRef.current.stop();
         }
     };
 
@@ -22,7 +64,7 @@ export function Library({ items, onUpload, onAddToTimeline }: LibraryProps) {
     return (
         <div className="w-64 border-r p-4 flex flex-col h-full">
             <h2 className="text-xl font-bold mb-4">Library</h2>
-            <div className="mb-4">
+            <div className="mb-4 flex flex-col gap-2">
                 <input 
                     type="file" 
                     onChange={handleFileChange} 
@@ -31,6 +73,24 @@ export function Library({ items, onUpload, onAddToTimeline }: LibraryProps) {
                 />
                 <Button asChild className="w-full">
                     <label htmlFor="file-upload">Upload Media</label>
+                </Button>
+                
+                <Button 
+                    onClick={() => isRecording ? stopRecording() : startRecording()}
+                    variant={isRecording ? "destructive" : "outline"}
+                    className={`w-full ${isRecording ? 'animate-pulse' : ''}`}
+                >
+                    {isRecording ? (
+                        <>
+                            <Square className="w-4 h-4 mr-2" />
+                            Stop Recording
+                        </>
+                    ) : (
+                        <>
+                            <Mic className="w-4 h-4 mr-2" />
+                            Record Audio
+                        </>
+                    )}
                 </Button>
             </div>
 

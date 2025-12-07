@@ -1,5 +1,6 @@
 import ffmpeg
 import os
+import uuid
 from models import Project
 
 def render_project(project: Project, output_path: str, preset: str = 'ultrafast', crf: int = 28):
@@ -34,7 +35,11 @@ def render_project(project: Project, output_path: str, preset: str = 'ultrafast'
                 gap_duration = clip.start_time - current_time
                 if gap_duration > 0.01: # Threshold
                     # Insert Black Video (Force 1920x1080)
-                    v_gap = ffmpeg.input(f'color=c=black:s=1920x1080:d={gap_duration}', f='lavfi').video
+                    v_gap = (
+                        ffmpeg.input(f'color=c=black:s=1920x1080:d={gap_duration}', f='lavfi')
+                        .video
+                        .filter('metadata', mode='add', key='unique_id', value=str(uuid.uuid4()))
+                    )
                     # No audio gap here, audio is handled separately
                     video_concat_parts.append(v_gap)
             
@@ -53,8 +58,11 @@ def render_project(project: Project, output_path: str, preset: str = 'ultrafast'
             source_duration = duration * speed
             
             # Reset PTS to 0 for concat: setpts=(PTS-STARTPTS)/speed
+            # Fix: Add unique metadata to prevent ffmpeg-python from merging identical filter chains
+            unique_id = str(uuid.uuid4())
             v = (
                 inp.video
+                .filter('metadata', mode='add', key='unique_id', value=unique_id)
                 .filter('trim', start=clip.source_start, duration=source_duration)
                 .filter('setpts', f'(PTS-STARTPTS)/{speed}')
                 .filter('scale', 1920, 1080)
@@ -67,6 +75,7 @@ def render_project(project: Project, output_path: str, preset: str = 'ultrafast'
             video_concat_parts.append(v)
             
             current_time = clip.end_time
+
             
     # Calculate Audio Track Durations
     for track in audio_tracks:
@@ -83,7 +92,11 @@ def render_project(project: Project, output_path: str, preset: str = 'ultrafast'
             if max_duration > current_video_end:
                 gap_duration = max_duration - current_video_end
                 if gap_duration > 0.01:
-                    v_gap = ffmpeg.input(f'color=c=black:s=1920x1080:d={gap_duration}', f='lavfi').video
+                    v_gap = (
+                        ffmpeg.input(f'color=c=black:s=1920x1080:d={gap_duration}', f='lavfi')
+                        .video
+                        .filter('metadata', mode='add', key='unique_id', value=str(uuid.uuid4()))
+                    )
                     video_concat_parts.append(v_gap)
 
             concatenated = ffmpeg.concat(*video_concat_parts, v=1, a=0).node
@@ -112,7 +125,11 @@ def render_project(project: Project, output_path: str, preset: str = 'ultrafast'
             
             inp = ffmpeg.input(clip.source_path)
             
-            a = inp.audio.filter('atrim', start=clip.source_start, duration=source_duration).filter('asetpts', 'PTS-STARTPTS')
+            # Fix: Add unique metadata to prevent ffmpeg-python from merging identical audio chains
+            unique_id_a = str(uuid.uuid4())
+            a = inp.audio.filter('ametadata', mode='add', key='unique_id', value=unique_id_a)
+            
+            a = a.filter('atrim', start=clip.source_start, duration=source_duration).filter('asetpts', 'PTS-STARTPTS')
             
             if speed != 1.0:
                  a = a.filter('atempo', speed)

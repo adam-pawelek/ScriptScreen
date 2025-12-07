@@ -9,11 +9,12 @@ export interface Clip {
   volume: number;
   speed?: number; // Added speed
   z_index?: number;
+  linked_id?: string; // ID of paired audio/video clip
 }
 
 export interface Track {
   id: string;
-  type: 'video' | 'audio';
+  type: 'video' | 'audio' | 'av';
   clips: Clip[];
 }
 

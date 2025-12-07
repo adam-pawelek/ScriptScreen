@@ -10,11 +10,12 @@ interface TimelineProps {
     onDeleteClip: (trackId: string, clipId: string) => void;
     onUnlinkClip: (trackId: string, clipId: string) => void;
     onSplitClip: (trackId: string, clipId: string, time: number) => void;
+    onMergeClips: (trackId: string, clipIds: string[]) => void;
     onSeek: (time: number) => void;
     currentTime: number; // Controlled by parent
 }
 
-export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, onSplitClip, onSeek, currentTime }: TimelineProps) {
+export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, onSplitClip, onMergeClips, onSeek, currentTime }: TimelineProps) {
     const PIXELS_PER_SECOND = 20;
     const SNAP_THRESHOLD_PX = 15; // Distance to snap
     
@@ -356,12 +357,24 @@ export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, on
                                                 </div>
                                             </ContextMenuTrigger>
                                             <ContextMenuContent>
-                                                <ContextMenuItem onClick={() => {
-                                                    const vol = prompt("Volume (0.0 - 2.0)", clip.volume.toString());
-                                                    if (vol) onUpdateClip(track.id, clip.id, { volume: parseFloat(vol) });
-                                                }}>
-                                                    Adjust Volume...
-                                                </ContextMenuItem>
+                                                {/* Merge Option */}
+                                                {isSelected && selectedClips.filter(id => track.clips.some(c => c.id === id)).length >= 2 && (
+                                                    <ContextMenuItem onClick={() => {
+                                                        const selectedOnTrack = selectedClips.filter(id => track.clips.some(c => c.id === id));
+                                                        onMergeClips(track.id, selectedOnTrack);
+                                                    }}>
+                                                        Connect into one
+                                                    </ContextMenuItem>
+                                                )}
+                                                
+                                                {(clip.type === 'audio' || clip.linked_id) && (
+                                                    <ContextMenuItem onClick={() => {
+                                                        const vol = prompt("Volume (0.0 - 2.0)", clip.volume.toString());
+                                                        if (vol) onUpdateClip(track.id, clip.id, { volume: parseFloat(vol) });
+                                                    }}>
+                                                        Adjust Volume...
+                                                    </ContextMenuItem>
+                                                )}
                                                 <ContextMenuItem onClick={() => {
                                                      const speed = prompt("Speed (0.5 - 2.0)", (clip.speed || 1.0).toString());
                                                      if (speed) onUpdateClip(track.id, clip.id, { speed: parseFloat(speed) });

@@ -14,11 +14,13 @@ export default function Home() {
     previewUrl, 
     isRendering, 
     uploadFile, 
+    uploadRecording,
     addClip, 
     updateClip,
     deleteClip,
     unlinkClip,
-    splitClip
+    splitClip,
+    mergeClips
   } = useProject();
 
   const [currentTime, setCurrentTime] = useState(0);
@@ -65,6 +67,7 @@ export default function Home() {
                 
                 addClip(trackId, item, 0); 
             }}
+            onRecordAudio={uploadRecording}
         />
 
         {/* Right: Preview & Timeline */}
@@ -88,8 +91,9 @@ export default function Home() {
                     onDeleteClip={deleteClip}
                     onUnlinkClip={unlinkClip}
                     onSplitClip={splitClip}
+                    onMergeClips={mergeClips}
                     onSeek={setCurrentTime}
-                    currentTime={currentTime} // Pass current time for visual feedback
+                    currentTime={currentTime}
                 />
             </div>
         </div>
