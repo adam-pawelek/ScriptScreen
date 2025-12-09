@@ -15,6 +15,17 @@ class Clip(BaseModel):
     z_index: int = 0
     linked_id: Optional[str] = None # ID of the paired audio/video clip
 
+class TextOverlay(BaseModel):
+    id: str
+    text: str
+    start_time: float  # When text appears (seconds)
+    end_time: float    # When text disappears (seconds)
+    x: float = 50.0    # Percentage from left (0-100)
+    y: float = 10.0    # Percentage from bottom (0-100)
+    font_size: int = 48
+    font_family: str = "Sans"
+    color: str = "white"
+
 class Track(BaseModel):
     id: str
     type: str # "video", "audio", "av" (Audio from Video)
@@ -24,3 +35,4 @@ class Project(BaseModel):
     id: str = str(uuid.uuid4())
     tracks: List[Track] = []
     duration: float = 0.0
+    text_overlays: List[TextOverlay] = []

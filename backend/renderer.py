@@ -145,22 +145,49 @@ def render_project(project: Project, output_path: str, preset: str = 'ultrafast'
                 a = a.filter('adelay', delays=f"{delay_ms}|{delay_ms}")
             
             audio_overlays.append(a)
+    
+    # 5. Apply Text Overlays
+    if hasattr(project, 'text_overlays') and project.text_overlays:
+        for text_overlay in project.text_overlays:
+            font_size = getattr(text_overlay, 'font_size', 48)
+            font_family = getattr(text_overlay, 'font_family', 'Sans')
+            color = getattr(text_overlay, 'color', 'white')
             
-    # 5. Mix Audio
+            # Get x and y percentages (from left and bottom)
+            x_pct = getattr(text_overlay, 'x', 50.0)
+            y_pct = getattr(text_overlay, 'y', 10.0)
+            
+            # Convert percentages to ffmpeg expressions
+            # x: percentage from left
+            # y: percentage from bottom (ffmpeg y=0 is top, so we need to invert)
+            x_pos = f'(w-text_w)*{x_pct}/100'
+            y_pos = f'h-text_h-(h-text_h)*{y_pct}/100'
+            
+            # Escape special characters in text for ffmpeg
+            escaped_text = text_overlay.text.replace("'", "\\'").replace(":", "\\:")
+            
+            # Apply drawtext filter with enable expression for timing
+            main_v = main_v.filter(
+                'drawtext',
+                text=escaped_text,
+                fontsize=font_size,
+                font=font_family,
+                fontcolor=color,
+                x=x_pos,
+                y=y_pos,
+                enable=f'between(t,{text_overlay.start_time},{text_overlay.end_time})',
+                borderw=2,
+                bordercolor='black'
+            )
+            
+    # 6. Mix Audio
     final_audio = None
     if len(audio_overlays) > 1:
-        # Use duration='first' because we padded main_v to be max_duration? 
-        # No, 'longest' is safer here since we are mixing separate tracks.
-        # But 'main_v' defines visual length.
-        # If we use 'longest', audio might extend past video if we messed up padding.
-        # But we padded video to max_duration. So 'longest' or 'first' (if video stream isn't input)
-        # amix doesn't take video input.
-        # So 'longest' ensures all audio is heard.
         final_audio = ffmpeg.filter(audio_overlays, 'amix', inputs=len(audio_overlays), duration='longest')
     elif len(audio_overlays) == 1:
         final_audio = audio_overlays[0]
         
-    # 6. Output
+    # 7. Output
     streams = [main_v]
     if final_audio:
         streams.append(final_audio)

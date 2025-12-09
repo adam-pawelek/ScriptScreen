@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Project, Clip, UploadResponse } from '@/types';
+import { Project, Clip, UploadResponse, TextOverlay } from '@/types';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -14,7 +14,8 @@ export function useProject() {
         { id: 'audio-track-1', type: 'audio', clips: [] },
         { id: 'audio-track-2', type: 'audio', clips: [] }
     ],
-    duration: 0
+    duration: 0,
+    text_overlays: []
   });
   
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -379,6 +380,30 @@ export function useProject() {
       }
   };
 
+  // Text Overlay Functions
+  const addTextOverlay = (textOverlay: Omit<TextOverlay, 'id'>) => {
+      setProject(prev => ({
+          ...prev,
+          text_overlays: [...prev.text_overlays, { ...textOverlay, id: uuidv4() }]
+      }));
+  };
+
+  const updateTextOverlay = (id: string, updates: Partial<TextOverlay>) => {
+      setProject(prev => ({
+          ...prev,
+          text_overlays: prev.text_overlays.map(t => 
+              t.id === id ? { ...t, ...updates } : t
+          )
+      }));
+  };
+
+  const deleteTextOverlay = (id: string) => {
+      setProject(prev => ({
+          ...prev,
+          text_overlays: prev.text_overlays.filter(t => t.id !== id)
+      }));
+  };
+
   // Auto-Preview Logic
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -419,6 +444,9 @@ export function useProject() {
     deleteClip,
     unlinkClip,
     splitClip,
-    mergeClips
+    mergeClips,
+    addTextOverlay,
+    updateTextOverlay,
+    deleteTextOverlay
   };
 }

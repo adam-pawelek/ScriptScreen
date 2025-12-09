@@ -12,6 +12,18 @@ export interface Clip {
   linked_id?: string; // ID of paired audio/video clip
 }
 
+export interface TextOverlay {
+  id: string;
+  text: string;
+  start_time: number;
+  end_time: number;
+  x: number;  // Percentage from left (0-100)
+  y: number;  // Percentage from bottom (0-100)
+  font_size: number;
+  font_family: string;
+  color: string;
+}
+
 export interface Track {
   id: string;
   type: 'video' | 'audio' | 'av';
@@ -22,6 +34,7 @@ export interface Project {
   id: string;
   tracks: Track[];
   duration: number;
+  text_overlays: TextOverlay[];
 }
 
 export interface UploadResponse {
