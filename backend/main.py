@@ -37,12 +37,34 @@ def read_root():
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     file_id = str(uuid.uuid4())
-    extension = os.path.splitext(file.filename)[1]
+    extension = os.path.splitext(file.filename)[1].lower()
     filename = f"{file_id}{extension}"
     file_path = os.path.join(UPLOAD_DIR, filename)
     
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+    
+    # For WebM audio files (browser recordings), re-encode to fix duration metadata
+    # Chrome has a bug where WebM duration is not written correctly
+    if extension == '.webm':
+        try:
+            fixed_filename = f"{file_id}_fixed.webm"
+            fixed_path = os.path.join(UPLOAD_DIR, fixed_filename)
+            
+            # Re-encode with ffmpeg to fix metadata
+            (
+                ffmpeg
+                .input(file_path)
+                .output(fixed_path, acodec='libopus', audio_bitrate='128k')
+                .overwrite_output()
+                .run(quiet=True)
+            )
+            
+            # Replace original with fixed version
+            os.remove(file_path)
+            os.rename(fixed_path, file_path)
+        except Exception as e:
+            print(f"Warning: Could not fix WebM duration for {filename}: {e}")
         
     # Get Duration using ffprobe
     duration = 10.0 # Default fallback
@@ -58,9 +80,17 @@ async def upload_file(file: UploadFile = File(...)):
         "id": file_id,
         "filename": filename,
         "url": f"/uploads/{filename}",
-        "type": "video" if extension.lower() in ['.mp4', '.mov', '.avi'] else "audio",
+        "type": "video" if extension in ['.mp4', '.mov', '.avi', '.mkv', '.webm'] and has_video_stream(file_path) else "audio",
         "duration": duration
     }
+
+def has_video_stream(file_path):
+    """Check if file has a video stream"""
+    try:
+        probe = ffmpeg.probe(file_path)
+        return any(stream['codec_type'] == 'video' for stream in probe['streams'])
+    except:
+        return False
 
 @app.post("/preview")
 async def generate_preview(project: Project):

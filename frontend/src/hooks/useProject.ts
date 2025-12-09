@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Project, Clip, UploadResponse, TextOverlay } from '@/types';
+import { Project, Clip, UploadResponse, TextOverlay, ShapeOverlay } from '@/types';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -15,7 +15,8 @@ export function useProject() {
         { id: 'audio-track-2', type: 'audio', clips: [] }
     ],
     duration: 0,
-    text_overlays: []
+    text_overlays: [],
+    shape_overlays: []
   });
   
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -404,6 +405,30 @@ export function useProject() {
       }));
   };
 
+  // Shape Overlay Functions
+  const addShapeOverlay = (shapeOverlay: Omit<ShapeOverlay, 'id'>) => {
+      setProject(prev => ({
+          ...prev,
+          shape_overlays: [...prev.shape_overlays, { ...shapeOverlay, id: uuidv4() }]
+      }));
+  };
+
+  const updateShapeOverlay = (id: string, updates: Partial<ShapeOverlay>) => {
+      setProject(prev => ({
+          ...prev,
+          shape_overlays: prev.shape_overlays.map(s => 
+              s.id === id ? { ...s, ...updates } : s
+          )
+      }));
+  };
+
+  const deleteShapeOverlay = (id: string) => {
+      setProject(prev => ({
+          ...prev,
+          shape_overlays: prev.shape_overlays.filter(s => s.id !== id)
+      }));
+  };
+
   // Auto-Preview Logic
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -447,6 +472,9 @@ export function useProject() {
     mergeClips,
     addTextOverlay,
     updateTextOverlay,
-    deleteTextOverlay
+    deleteTextOverlay,
+    addShapeOverlay,
+    updateShapeOverlay,
+    deleteShapeOverlay
   };
 }

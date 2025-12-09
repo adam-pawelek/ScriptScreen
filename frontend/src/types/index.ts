@@ -24,6 +24,20 @@ export interface TextOverlay {
   color: string;
 }
 
+export interface ShapeOverlay {
+  id: string;
+  name: string;
+  type: 'line' | 'arrow';
+  start_time: number;
+  end_time: number;
+  x1: number;  // Start X % from left (0-100)
+  y1: number;  // Start Y % from bottom (0-100)
+  x2: number;  // End X % from left (0-100)
+  y2: number;  // End Y % from bottom (0-100)
+  color: string;
+  width: number;
+}
+
 export interface Track {
   id: string;
   type: 'video' | 'audio' | 'av';
@@ -35,6 +49,7 @@ export interface Project {
   tracks: Track[];
   duration: number;
   text_overlays: TextOverlay[];
+  shape_overlays: ShapeOverlay[];
 }
 
 export interface UploadResponse {

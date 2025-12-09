@@ -1,6 +1,7 @@
 import ffmpeg
 import os
 import uuid
+import math
 from models import Project
 
 def render_project(project: Project, output_path: str, preset: str = 'ultrafast', crf: int = 28):
@@ -179,8 +180,80 @@ def render_project(project: Project, output_path: str, preset: str = 'ultrafast'
                 borderw=2,
                 bordercolor='black'
             )
+    
+    # 6. Apply Shape Overlays (Lines and Arrows)
+    # Helper function to draw a line using multiple drawbox filters (since drawline may not exist)
+    def draw_line_with_boxes(video_stream, x1, y1, x2, y2, color, thickness, enable_expr, num_segments=20):
+        """Draw a line using multiple small boxes along the path"""
+        for i in range(num_segments + 1):
+            t = i / num_segments
+            x = int(x1 + t * (x2 - x1))
+            y = int(y1 + t * (y2 - y1))
+            half_t = thickness // 2
+            video_stream = video_stream.filter(
+                'drawbox',
+                x=max(0, x - half_t),
+                y=max(0, y - half_t),
+                w=thickness,
+                h=thickness,
+                color=color,
+                t='fill',
+                enable=enable_expr
+            )
+        return video_stream
+    
+    if hasattr(project, 'shape_overlays') and project.shape_overlays:
+        for shape in project.shape_overlays:
+            shape_type = getattr(shape, 'type', 'line')
+            color = getattr(shape, 'color', 'white')
+            width = getattr(shape, 'width', 3)
             
-    # 6. Mix Audio
+            # Get coordinates as percentages
+            x1_pct = getattr(shape, 'x1', 10.0)
+            y1_pct = getattr(shape, 'y1', 10.0)
+            x2_pct = getattr(shape, 'x2', 90.0)
+            y2_pct = getattr(shape, 'y2', 10.0)
+            
+            # Calculate actual pixel values for 1920x1080
+            # y is inverted: 0% from bottom = bottom of screen, 100% from bottom = top
+            x1_px = int(1920 * x1_pct / 100)
+            y1_px = int(1080 - 1080 * y1_pct / 100)
+            x2_px = int(1920 * x2_pct / 100)
+            y2_px = int(1080 - 1080 * y2_pct / 100)
+            
+            enable_expr = f'between(t,{shape.start_time},{shape.end_time})'
+            
+            # Calculate line length to determine number of segments
+            line_length = math.sqrt((x2_px - x1_px)**2 + (y2_px - y1_px)**2)
+            num_segments = max(10, int(line_length / (width * 0.8)))  # More segments for smoother lines
+            
+            # Draw the main line
+            main_v = draw_line_with_boxes(main_v, x1_px, y1_px, x2_px, y2_px, color, width, enable_expr, num_segments)
+            
+            # If it's an arrow, draw the arrowhead
+            if shape_type == 'arrow':
+                # Calculate angle of the line
+                dx = x2_px - x1_px
+                dy = y2_px - y1_px
+                angle = math.atan2(dy, dx)
+                
+                # Arrowhead size based on line width
+                arrow_size = width * 5
+                
+                # Calculate arrowhead points (two lines forming a V at the end)
+                angle1 = angle + math.pi * 0.8  # 144 degrees from line direction
+                angle2 = angle - math.pi * 0.8
+                
+                ax1 = int(x2_px + arrow_size * math.cos(angle1))
+                ay1 = int(y2_px + arrow_size * math.sin(angle1))
+                ax2 = int(x2_px + arrow_size * math.cos(angle2))
+                ay2 = int(y2_px + arrow_size * math.sin(angle2))
+                
+                # Draw arrowhead lines (fewer segments since they're shorter)
+                main_v = draw_line_with_boxes(main_v, x2_px, y2_px, ax1, ay1, color, width, enable_expr, 8)
+                main_v = draw_line_with_boxes(main_v, x2_px, y2_px, ax2, ay2, color, width, enable_expr, 8)
+            
+    # 7. Mix Audio
     final_audio = None
     if len(audio_overlays) > 1:
         final_audio = ffmpeg.filter(audio_overlays, 'amix', inputs=len(audio_overlays), duration='longest')

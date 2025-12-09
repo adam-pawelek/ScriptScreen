@@ -26,6 +26,19 @@ class TextOverlay(BaseModel):
     font_family: str = "Sans"
     color: str = "white"
 
+class ShapeOverlay(BaseModel):
+    id: str
+    name: str = ""  # Optional name/label for the shape
+    type: str  # "line" or "arrow"
+    start_time: float
+    end_time: float
+    x1: float = 10.0   # Start X % from left
+    y1: float = 10.0   # Start Y % from bottom
+    x2: float = 90.0   # End X % from left
+    y2: float = 10.0   # End Y % from bottom
+    color: str = "white"
+    width: int = 3
+
 class Track(BaseModel):
     id: str
     type: str # "video", "audio", "av" (Audio from Video)
@@ -36,3 +49,4 @@ class Project(BaseModel):
     tracks: List[Track] = []
     duration: float = 0.0
     text_overlays: List[TextOverlay] = []
+    shape_overlays: List[ShapeOverlay] = []

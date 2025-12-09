@@ -23,7 +23,10 @@ export default function Home() {
     mergeClips,
     addTextOverlay,
     updateTextOverlay,
-    deleteTextOverlay
+    deleteTextOverlay,
+    addShapeOverlay,
+    updateShapeOverlay,
+    deleteShapeOverlay
   } = useProject();
 
   const [currentTime, setCurrentTime] = useState(0);
@@ -58,6 +61,7 @@ export default function Home() {
         <Library 
             items={library} 
             textOverlays={project.text_overlays}
+            shapeOverlays={project.shape_overlays}
             onUpload={uploadFile} 
             onAddToTimeline={(item) => {
                 let trackId = 'video-track-1';
@@ -75,6 +79,9 @@ export default function Home() {
             onAddTextOverlay={addTextOverlay}
             onUpdateTextOverlay={updateTextOverlay}
             onDeleteTextOverlay={deleteTextOverlay}
+            onAddShapeOverlay={addShapeOverlay}
+            onUpdateShapeOverlay={updateShapeOverlay}
+            onDeleteShapeOverlay={deleteShapeOverlay}
         />
 
         {/* Right: Preview & Timeline */}
