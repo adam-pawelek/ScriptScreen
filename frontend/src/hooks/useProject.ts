@@ -12,7 +12,8 @@ export function useProject() {
         { id: 'video-track-1', type: 'video', clips: [] },
         { id: 'av-track-1', type: 'av', clips: [] }, // Special track for video audio
         { id: 'audio-track-1', type: 'audio', clips: [] },
-        { id: 'audio-track-2', type: 'audio', clips: [] }
+        { id: 'audio-track-2', type: 'audio', clips: [] },
+        { id: 'audio-track-3', type: 'audio', clips: [] }
     ],
     duration: 0,
     text_overlays: [],
@@ -222,6 +223,89 @@ export function useProject() {
         }
         
         return { ...prev, tracks: newTracks };
+    });
+  };
+
+  // Move clip to a different track
+  const moveClipToTrack = (fromTrackId: string, clipId: string, toTrackId: string, newStartTime?: number) => {
+    setProject(prev => {
+        const fromTrack = prev.tracks.find(t => t.id === fromTrackId);
+        const toTrack = prev.tracks.find(t => t.id === toTrackId);
+        
+        if (!fromTrack || !toTrack) return prev;
+        
+        const clip = fromTrack.clips.find(c => c.id === clipId);
+        if (!clip) return prev;
+        
+        // Only allow moving audio clips between audio/av tracks
+        if (clip.type === 'audio' && (toTrack.type === 'audio' || toTrack.type === 'av')) {
+            const movedClip: Clip = {
+                ...clip,
+                track_id: toTrackId,
+                start_time: newStartTime !== undefined ? newStartTime : clip.start_time,
+                end_time: newStartTime !== undefined ? newStartTime + (clip.end_time - clip.start_time) : clip.end_time
+            };
+            
+            // Check for overlaps on target track
+            const epsilon = 0.001;
+            const hasOverlap = toTrack.clips.some(c => 
+                c.id !== clipId && 
+                movedClip.start_time < c.end_time - epsilon && 
+                movedClip.end_time > c.start_time + epsilon
+            );
+            
+            if (hasOverlap) {
+                console.log("Cannot move - overlap on target track");
+                return prev;
+            }
+            
+            // If clip is linked, we need to unlink it when moving to a different track
+            if (clip.linked_id) {
+                // Unlink both clips
+                const newTracks = prev.tracks.map(t => {
+                    if (t.id === fromTrackId) {
+                        return {
+                            ...t,
+                            clips: t.clips.filter(c => c.id !== clipId)
+                        };
+                    }
+                    if (t.id === toTrackId) {
+                        return {
+                            ...t,
+                            clips: [...t.clips, { ...movedClip, linked_id: undefined }]
+                        };
+                    }
+                    // Unlink the paired clip
+                    return {
+                        ...t,
+                        clips: t.clips.map(c => 
+                            c.id === clip.linked_id ? { ...c, linked_id: undefined } : c
+                        )
+                    };
+                });
+                return { ...prev, tracks: newTracks };
+            }
+            
+            const newTracks = prev.tracks.map(t => {
+                if (t.id === fromTrackId) {
+                    return {
+                        ...t,
+                        clips: t.clips.filter(c => c.id !== clipId)
+                    };
+                }
+                if (t.id === toTrackId) {
+                    return {
+                        ...t,
+                        clips: [...t.clips, movedClip]
+                    };
+                }
+                return t;
+            });
+            
+            return { ...prev, tracks: newTracks };
+        }
+        
+        return prev;
     });
   };
 
@@ -547,6 +631,7 @@ export function useProject() {
     uploadRecording,
     addClip,
     addClipAtPosition,
+    moveClipToTrack,
     updateClip,
     deleteClip,
     unlinkClip,

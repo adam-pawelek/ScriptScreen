@@ -12,12 +12,13 @@ interface TimelineProps {
     onSplitClip: (trackId: string, clipId: string, time: number) => void;
     onMergeClips: (trackId: string, clipIds: string[]) => void;
     onDropAsset: (asset: UploadResponse, trackId: string, startTime: number) => void;
+    onMoveClipToTrack: (fromTrackId: string, clipId: string, toTrackId: string, newStartTime?: number) => void;
     onSeek: (time: number) => void;
     currentTime: number; // Controlled by parent
     draggingAsset: UploadResponse | null; // Currently dragged asset from library
 }
 
-export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, onSplitClip, onMergeClips, onDropAsset, onSeek, currentTime, draggingAsset }: TimelineProps) {
+export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, onSplitClip, onMergeClips, onDropAsset, onMoveClipToTrack, onSeek, currentTime, draggingAsset }: TimelineProps) {
     const PIXELS_PER_SECOND = 20;
     const SNAP_THRESHOLD_PX = 15; // Distance to snap
     
@@ -31,11 +32,15 @@ export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, on
     const [dragState, setDragState] = useState<{
         active: boolean;
         startX: number;
+        startY: number;
         // initialClips stores the baseline state when drag started
-        initialClips: { id: string, start: number, end: number, trackId: string }[];
+        initialClips: { id: string, start: number, end: number, trackId: string, type: 'video' | 'audio' }[];
         // currentDeltas stores the visual offset for rendering
         currentDelta: number;
     } | null>(null);
+    
+    // Track which track the mouse is currently hovering over during drag
+    const [hoverTrackId, setHoverTrackId] = useState<string | null>(null);
 
     // Drop Preview State (for library drag-drop)
     const [dropPreview, setDropPreview] = useState<{
@@ -44,6 +49,15 @@ export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, on
         duration: number;
         type: 'video' | 'audio';
         isValid: boolean;
+    } | null>(null);
+    
+    // Cross-track move preview (for moving clips between tracks)
+    const [crossTrackPreview, setCrossTrackPreview] = useState<{
+        trackId: string;
+        startTime: number;
+        duration: number;
+        isValid: boolean;
+        clipName: string;
     } | null>(null);
 
     // Check if a clip would overlap with existing clips on a track
@@ -297,11 +311,11 @@ export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, on
         setSelectedClips(newSelected);
 
         // Start Drag
-        const initialClips = [];
+        const initialClips: { id: string, start: number, end: number, trackId: string, type: 'video' | 'audio' }[] = [];
         for (const t of project.tracks) {
             for (const c of t.clips) {
                 if (newSelected.includes(c.id)) {
-                    initialClips.push({ id: c.id, start: c.start_time, end: c.end_time, trackId: t.id });
+                    initialClips.push({ id: c.id, start: c.start_time, end: c.end_time, trackId: t.id, type: c.type });
                 }
             }
         }
@@ -309,9 +323,11 @@ export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, on
         setDragState({
             active: true,
             startX: e.clientX,
+            startY: e.clientY,
             initialClips,
             currentDelta: 0
         });
+        setHoverTrackId(trackId);
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
@@ -374,6 +390,39 @@ export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, on
 
         deltaTime = bestSnapDelta;
         setDragState(prev => prev ? { ...prev, currentDelta: deltaTime } : null);
+        
+        // Update cross-track preview if hovering a different track
+        if (hoverTrackId && dragState.initialClips.length === 1) {
+            const clip = dragState.initialClips[0];
+            const isMovingToDifferentTrack = clip.trackId !== hoverTrackId;
+            const targetTrack = project.tracks.find(t => t.id === hoverTrackId);
+            const isValidTarget = clip.type === 'audio' && targetTrack && (targetTrack.type === 'audio' || targetTrack.type === 'av');
+            
+            if (isMovingToDifferentTrack && isValidTarget) {
+                const newStart = Math.max(0, clip.start + deltaTime);
+                const duration = clip.end - clip.start;
+                const hasOverlap = checkOverlap(hoverTrackId, newStart, newStart + duration);
+                
+                // Get clip name
+                let clipName = '';
+                project.tracks.forEach(t => {
+                    const c = t.clips.find(x => x.id === clip.id);
+                    if (c) clipName = c.source_path.split('/').pop() || '';
+                });
+                
+                setCrossTrackPreview({
+                    trackId: hoverTrackId,
+                    startTime: newStart,
+                    duration: duration,
+                    isValid: !hasOverlap,
+                    clipName: clipName
+                });
+            } else {
+                setCrossTrackPreview(null);
+            }
+        } else {
+            setCrossTrackPreview(null);
+        }
     };
 
     const handleMouseUp = () => {
@@ -386,39 +435,58 @@ export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, on
                 newEnd: Math.max(0, c.start + dragState.currentDelta) + (c.end - c.start)
             }));
 
-            // 2. Validate
-            let isValid = true;
-            for (const movedClip of finalClips) {
-                const track = project.tracks.find(t => t.id === movedClip.trackId);
-                if (track) {
-                    for (const existingClip of track.clips) {
-                        if (dragState.initialClips.some(ic => ic.id === existingClip.id)) continue;
-                        
-                        const epsilon = 0.001;
-                        if (movedClip.newStart < existingClip.end_time - epsilon && movedClip.newEnd > existingClip.start_time + epsilon) {
-                            isValid = false;
-                            break;
+            // Check if we're moving to a different track (cross-track movement)
+            const isCrossTrackMove = hoverTrackId && dragState.initialClips.length === 1 && 
+                                     dragState.initialClips[0].trackId !== hoverTrackId;
+            
+            if (isCrossTrackMove) {
+                const clip = dragState.initialClips[0];
+                const targetTrack = project.tracks.find(t => t.id === hoverTrackId);
+                
+                // Only allow audio clips to move between audio/av tracks
+                if (clip.type === 'audio' && targetTrack && (targetTrack.type === 'audio' || targetTrack.type === 'av')) {
+                    const newStart = Math.max(0, clip.start + dragState.currentDelta);
+                    onMoveClipToTrack(clip.trackId, clip.id, hoverTrackId, newStart);
+                }
+                // Video clips cannot be moved to different tracks
+            } else {
+                // Same track movement - validate and update
+                // 2. Validate
+                let isValid = true;
+                for (const movedClip of finalClips) {
+                    const track = project.tracks.find(t => t.id === movedClip.trackId);
+                    if (track) {
+                        for (const existingClip of track.clips) {
+                            if (dragState.initialClips.some(ic => ic.id === existingClip.id)) continue;
+                            
+                            const epsilon = 0.001;
+                            if (movedClip.newStart < existingClip.end_time - epsilon && movedClip.newEnd > existingClip.start_time + epsilon) {
+                                isValid = false;
+                                break;
+                            }
                         }
                     }
+                    if (!isValid) break;
                 }
-                if (!isValid) break;
-            }
 
-            if (isValid) {
-                dragState.initialClips.forEach(c => {
-                    const newStart = Math.max(0, c.start + dragState.currentDelta);
-                    const duration = c.end - c.start;
-                    onUpdateClip(c.trackId, c.id, { 
-                        start_time: newStart, 
-                        end_time: newStart + duration 
+                if (isValid) {
+                    dragState.initialClips.forEach(c => {
+                        const newStart = Math.max(0, c.start + dragState.currentDelta);
+                        const duration = c.end - c.start;
+                        onUpdateClip(c.trackId, c.id, { 
+                            start_time: newStart, 
+                            end_time: newStart + duration 
+                        });
                     });
-                });
-            } else {
-                console.log("Invalid Move - Overlap Detected");
+                } else {
+                    console.log("Invalid Move - Overlap Detected");
+                }
             }
         }
 
         setDragState(null);
+        setHoverTrackId(null);
+        setCrossTrackPreview(null);
         setIsScrubbing(false);
     };
     
@@ -511,23 +579,30 @@ export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, on
                         </div>
                     </div>
 
-                    {project.tracks.map(track => (
+                    {project.tracks.map((track, trackIndex) => {
+                        // Check if cross-track move is valid for current drag
+                        const hasCrossTrackPreview = crossTrackPreview?.trackId === track.id;
+                        
+                        return (
                         <div 
                             key={track.id} 
                             className={`mb-2 relative h-12 rounded transition-colors ${
                                 dropPreview?.trackId === track.id 
                                     ? (dropPreview.isValid ? 'bg-green-100 ring-2 ring-green-400' : 'bg-red-100 ring-2 ring-red-400')
-                                    : 'bg-gray-200'
+                                    : hasCrossTrackPreview
+                                        ? (crossTrackPreview.isValid ? 'bg-blue-100 ring-2 ring-blue-400' : 'bg-red-100 ring-2 ring-red-400')
+                                        : 'bg-gray-200'
                             }`}
                             onDragOver={(e) => handleTrackDragOver(e, track.id)}
                             onDragLeave={handleTrackDragLeave}
                             onDrop={(e) => handleTrackDrop(e, track.id)}
+                            onMouseEnter={() => { if (dragState?.active) setHoverTrackId(track.id); }}
                         >
                             <div className="absolute left-0 top-0 bottom-0 w-8 bg-gray-300 flex items-center justify-center text-xs z-10">
-                                {track.type === 'video' ? 'V' : track.type === 'av' ? 'AV' : 'A'}
+                                {track.type === 'video' ? 'V' : track.type === 'av' ? 'AV' : `A${trackIndex - 1}`}
                             </div>
                             <div className="ml-8 relative h-full">
-                                {/* Drop Preview Ghost */}
+                                {/* Drop Preview Ghost (Library drag-drop) */}
                                 {dropPreview && dropPreview.trackId === track.id && (
                                     <div 
                                         className={`absolute top-1 bottom-1 rounded border-2 border-dashed flex items-center justify-center text-xs font-medium pointer-events-none z-30 ${
@@ -542,6 +617,27 @@ export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, on
                                     >
                                         {dropPreview.isValid ? (
                                             <span>{dropPreview.duration.toFixed(1)}s</span>
+                                        ) : (
+                                            <Ban className="w-4 h-4" />
+                                        )}
+                                    </div>
+                                )}
+                                
+                                {/* Cross-Track Move Preview Ghost */}
+                                {crossTrackPreview && crossTrackPreview.trackId === track.id && (
+                                    <div 
+                                        className={`absolute top-1 bottom-1 rounded border-2 border-dashed flex items-center justify-center text-xs font-medium pointer-events-none z-30 ${
+                                            crossTrackPreview.isValid 
+                                                ? 'bg-blue-200/50 border-blue-500 text-blue-700' 
+                                                : 'bg-red-200/50 border-red-500 text-red-700'
+                                        }`}
+                                        style={{
+                                            left: crossTrackPreview.startTime * PIXELS_PER_SECOND,
+                                            width: crossTrackPreview.duration * PIXELS_PER_SECOND,
+                                        }}
+                                    >
+                                        {crossTrackPreview.isValid ? (
+                                            <span className="truncate px-1">{crossTrackPreview.clipName}</span>
                                         ) : (
                                             <Ban className="w-4 h-4" />
                                         )}
@@ -636,7 +732,8 @@ export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, on
                                 })}
                             </div>
                         </div>
-                    ))}
+                    );
+                    })}
                 </div>
             </div>
         </div>

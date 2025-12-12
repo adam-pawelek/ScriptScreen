@@ -18,6 +18,7 @@ export default function Home() {
     uploadRecording,
     addClip,
     addClipAtPosition,
+    moveClipToTrack,
     updateClip,
     deleteClip,
     unlinkClip,
@@ -112,6 +113,7 @@ export default function Home() {
                     onSplitClip={splitClip}
                     onMergeClips={mergeClips}
                     onDropAsset={addClipAtPosition}
+                    onMoveClipToTrack={moveClipToTrack}
                     onSeek={setCurrentTime}
                     currentTime={currentTime}
                     draggingAsset={draggingAsset}
