@@ -17,9 +17,11 @@ interface LibraryProps {
     onAddShapeOverlay: (overlay: Omit<ShapeOverlay, 'id'>) => void;
     onUpdateShapeOverlay: (id: string, updates: Partial<ShapeOverlay>) => void;
     onDeleteShapeOverlay: (id: string) => void;
+    onDragStart: (item: UploadResponse) => void;
+    onDragEnd: () => void;
 }
 
-export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToTimeline, onRecordAudio, onAddTextOverlay, onUpdateTextOverlay, onDeleteTextOverlay, onAddShapeOverlay, onUpdateShapeOverlay, onDeleteShapeOverlay }: LibraryProps) {
+export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToTimeline, onRecordAudio, onAddTextOverlay, onUpdateTextOverlay, onDeleteTextOverlay, onAddShapeOverlay, onUpdateShapeOverlay, onDeleteShapeOverlay, onDragStart, onDragEnd }: LibraryProps) {
     const [isRecording, setIsRecording] = useState(false);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
@@ -473,19 +475,85 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
                 </div>
                 <TabsContent value="videos" className="flex-1 overflow-y-auto">
                     {videos.map(item => (
-                         <div key={item.id} className="p-2 border mb-2 rounded cursor-pointer hover:bg-gray-100"
-                              onClick={() => onAddToTimeline(item)}>
+                         <div 
+                             key={item.id} 
+                             className="p-2 border mb-2 rounded cursor-grab hover:bg-gray-100 active:cursor-grabbing transition-opacity"
+                             draggable
+                             onDragStart={(e) => {
+                                 e.dataTransfer.setData('application/json', JSON.stringify(item));
+                                 e.dataTransfer.effectAllowed = 'copy';
+                                 
+                                 // Notify parent of drag start
+                                 onDragStart(item);
+                                 
+                                 // Reduce opacity of the source element
+                                 (e.target as HTMLElement).style.opacity = '0.4';
+                                 
+                                 // Create semi-transparent drag ghost with white tint
+                                 const ghost = (e.target as HTMLElement).cloneNode(true) as HTMLElement;
+                                 ghost.style.opacity = '0.25';
+                                 ghost.style.backgroundColor = 'rgba(255, 255, 255, 0.6)';
+                                 ghost.style.position = 'absolute';
+                                 ghost.style.top = '-1000px';
+                                 ghost.style.pointerEvents = 'none';
+                                 ghost.style.borderRadius = '4px';
+                                 ghost.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+                                 document.body.appendChild(ghost);
+                                 e.dataTransfer.setDragImage(ghost, 0, 0);
+                                 // Clean up ghost after drag starts
+                                 setTimeout(() => document.body.removeChild(ghost), 0);
+                             }}
+                             onDragEnd={(e) => {
+                                 // Restore opacity
+                                 (e.target as HTMLElement).style.opacity = '1';
+                                 onDragEnd();
+                             }}
+                             onClick={() => onAddToTimeline(item)}
+                         >
                              <div className="text-sm font-medium truncate">{item.filename}</div>
-                             <div className="text-xs text-gray-500">Video</div>
+                             <div className="text-xs text-gray-500">Video • {item.duration.toFixed(1)}s</div>
                          </div>
                     ))}
                 </TabsContent>
                 <TabsContent value="audios" className="flex-1 overflow-y-auto">
                     {audios.map(item => (
-                         <div key={item.id} className="p-2 border mb-2 rounded cursor-pointer hover:bg-gray-100"
-                              onClick={() => onAddToTimeline(item)}>
+                         <div 
+                             key={item.id} 
+                             className="p-2 border mb-2 rounded cursor-grab hover:bg-gray-100 active:cursor-grabbing transition-opacity"
+                             draggable
+                             onDragStart={(e) => {
+                                 e.dataTransfer.setData('application/json', JSON.stringify(item));
+                                 e.dataTransfer.effectAllowed = 'copy';
+                                 
+                                 // Notify parent of drag start
+                                 onDragStart(item);
+                                 
+                                 // Reduce opacity of the source element
+                                 (e.target as HTMLElement).style.opacity = '0.4';
+                                 
+                                 // Create semi-transparent drag ghost with white tint
+                                 const ghost = (e.target as HTMLElement).cloneNode(true) as HTMLElement;
+                                 ghost.style.opacity = '0.25';
+                                 ghost.style.backgroundColor = 'rgba(255, 255, 255, 0.6)';
+                                 ghost.style.position = 'absolute';
+                                 ghost.style.top = '-1000px';
+                                 ghost.style.pointerEvents = 'none';
+                                 ghost.style.borderRadius = '4px';
+                                 ghost.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+                                 document.body.appendChild(ghost);
+                                 e.dataTransfer.setDragImage(ghost, 0, 0);
+                                 // Clean up ghost after drag starts
+                                 setTimeout(() => document.body.removeChild(ghost), 0);
+                             }}
+                             onDragEnd={(e) => {
+                                 // Restore opacity
+                                 (e.target as HTMLElement).style.opacity = '1';
+                                 onDragEnd();
+                             }}
+                             onClick={() => onAddToTimeline(item)}
+                         >
                              <div className="text-sm font-medium truncate">{item.filename}</div>
-                             <div className="text-xs text-gray-500">Audio</div>
+                             <div className="text-xs text-gray-500">Audio • {item.duration.toFixed(1)}s</div>
                          </div>
                     ))}
                 </TabsContent>

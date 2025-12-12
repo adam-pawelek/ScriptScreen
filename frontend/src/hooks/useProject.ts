@@ -144,6 +144,87 @@ export function useProject() {
     });
   };
 
+  // Add clip at a specific position (for drag-drop)
+  const addClipAtPosition = (asset: UploadResponse, trackId: string, startTime: number) => {
+    setProject(prev => {
+        const newTracks = [...prev.tracks];
+        const duration = asset.duration || 10.0;
+        
+        if (asset.type === 'video') {
+            // For videos, add to video track AND linked audio to AV track
+            const videoTrackIndex = newTracks.findIndex(t => t.type === 'video');
+            const avTrackIndex = newTracks.findIndex(t => t.type === 'av');
+            
+            if (videoTrackIndex === -1) return prev;
+            
+            const videoClipId = uuidv4();
+            const audioClipId = uuidv4();
+            
+            const videoClip: Clip = {
+                id: videoClipId,
+                track_id: newTracks[videoTrackIndex].id,
+                source_path: asset.url.replace('/uploads/', 'media/uploads/'),
+                start_time: startTime,
+                end_time: startTime + duration,
+                source_start: 0,
+                type: 'video',
+                volume: 0,
+                speed: 1.0,
+                linked_id: avTrackIndex !== -1 ? audioClipId : undefined
+            };
+            
+            newTracks[videoTrackIndex] = {
+                ...newTracks[videoTrackIndex],
+                clips: [...newTracks[videoTrackIndex].clips, videoClip]
+            };
+            
+            // Add linked audio if AV track exists
+            if (avTrackIndex !== -1) {
+                const audioClip: Clip = {
+                    id: audioClipId,
+                    track_id: newTracks[avTrackIndex].id,
+                    source_path: asset.url.replace('/uploads/', 'media/uploads/'),
+                    start_time: startTime,
+                    end_time: startTime + duration,
+                    source_start: 0,
+                    type: 'audio',
+                    volume: 1.0,
+                    speed: 1.0,
+                    linked_id: videoClipId
+                };
+                
+                newTracks[avTrackIndex] = {
+                    ...newTracks[avTrackIndex],
+                    clips: [...newTracks[avTrackIndex].clips, audioClip]
+                };
+            }
+        } else {
+            // Audio - add to specified track
+            const targetTrackIndex = newTracks.findIndex(t => t.id === trackId);
+            if (targetTrackIndex === -1) return prev;
+            
+            const newClip: Clip = {
+                id: uuidv4(),
+                track_id: trackId,
+                source_path: asset.url.replace('/uploads/', 'media/uploads/'),
+                start_time: startTime,
+                end_time: startTime + duration,
+                source_start: 0,
+                type: 'audio',
+                volume: 1.0,
+                speed: 1.0
+            };
+            
+            newTracks[targetTrackIndex] = {
+                ...newTracks[targetTrackIndex],
+                clips: [...newTracks[targetTrackIndex].clips, newClip]
+            };
+        }
+        
+        return { ...prev, tracks: newTracks };
+    });
+  };
+
   const updateClip = (trackId: string, clipId: string, updates: Partial<Clip>) => {
       setProject(prev => {
           let targetClip: Clip | undefined;
@@ -465,6 +546,7 @@ export function useProject() {
     uploadFile,
     uploadRecording,
     addClip,
+    addClipAtPosition,
     updateClip,
     deleteClip,
     unlinkClip,

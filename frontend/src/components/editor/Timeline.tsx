@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Project, Track, Clip } from '@/types';
+import { Project, Track, Clip, UploadResponse } from '@/types';
 import { Button } from '@/components/ui/button';
-import { Scissors, Trash2, Move, MousePointer2 } from 'lucide-react';
+import { Scissors, Trash2, Move, MousePointer2, Ban } from 'lucide-react';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 
 interface TimelineProps {
@@ -11,11 +11,13 @@ interface TimelineProps {
     onUnlinkClip: (trackId: string, clipId: string) => void;
     onSplitClip: (trackId: string, clipId: string, time: number) => void;
     onMergeClips: (trackId: string, clipIds: string[]) => void;
+    onDropAsset: (asset: UploadResponse, trackId: string, startTime: number) => void;
     onSeek: (time: number) => void;
     currentTime: number; // Controlled by parent
+    draggingAsset: UploadResponse | null; // Currently dragged asset from library
 }
 
-export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, onSplitClip, onMergeClips, onSeek, currentTime }: TimelineProps) {
+export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, onSplitClip, onMergeClips, onDropAsset, onSeek, currentTime, draggingAsset }: TimelineProps) {
     const PIXELS_PER_SECOND = 20;
     const SNAP_THRESHOLD_PX = 15; // Distance to snap
     
@@ -34,6 +36,199 @@ export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, on
         // currentDeltas stores the visual offset for rendering
         currentDelta: number;
     } | null>(null);
+
+    // Drop Preview State (for library drag-drop)
+    const [dropPreview, setDropPreview] = useState<{
+        trackId: string;
+        startTime: number;
+        duration: number;
+        type: 'video' | 'audio';
+        isValid: boolean;
+    } | null>(null);
+
+    // Check if a clip would overlap with existing clips on a track
+    const checkOverlap = (trackId: string, startTime: number, endTime: number): boolean => {
+        const track = project.tracks.find(t => t.id === trackId);
+        if (!track) return true; // Invalid track = overlap
+        
+        const epsilon = 0.001;
+        for (const clip of track.clips) {
+            if (startTime < clip.end_time - epsilon && endTime > clip.start_time + epsilon) {
+                return true; // Overlap detected
+            }
+        }
+        return false;
+    };
+
+    // Get the appropriate track for an asset type
+    const getTargetTrack = (assetType: 'video' | 'audio', hoverTrackId?: string): Track | undefined => {
+        if (assetType === 'video') {
+            // Videos only go to video track
+            return project.tracks.find(t => t.type === 'video');
+        } else {
+            // Audio can go to AV or audio tracks
+            if (hoverTrackId) {
+                const hoverTrack = project.tracks.find(t => t.id === hoverTrackId);
+                if (hoverTrack && (hoverTrack.type === 'audio' || hoverTrack.type === 'av')) {
+                    return hoverTrack;
+                }
+            }
+            // Default to first audio track
+            return project.tracks.find(t => t.type === 'audio');
+        }
+    };
+
+    // Handle drag over timeline
+    const handleTrackDragOver = (e: React.DragEvent, trackId: string) => {
+        e.preventDefault();
+        
+        try {
+            // We can't read the data during dragover (browser security), but we can check types
+            if (!e.dataTransfer.types.includes('application/json')) return;
+            
+            // Calculate drop position
+            if (timelineRef.current) {
+                const rect = timelineRef.current.getBoundingClientRect();
+                const offset = e.clientX - rect.left + timelineRef.current.scrollLeft - 32;
+                let dropTime = Math.max(0, offset / PIXELS_PER_SECOND);
+                
+                // Snap to existing clip edges
+                const track = project.tracks.find(t => t.id === trackId);
+                if (track) {
+                    let bestSnapTime = dropTime;
+                    let minDist = SNAP_THRESHOLD_PX / PIXELS_PER_SECOND;
+                    
+                    // Snap to 0
+                    if (dropTime < minDist) {
+                        bestSnapTime = 0;
+                        minDist = dropTime;
+                    }
+                    
+                    // Snap to clip edges
+                    for (const clip of track.clips) {
+                        const distToEnd = Math.abs(dropTime - clip.end_time);
+                        if (distToEnd < minDist) {
+                            minDist = distToEnd;
+                            bestSnapTime = clip.end_time;
+                        }
+                        const distToStart = Math.abs(dropTime - clip.start_time);
+                        if (distToStart < minDist) {
+                            minDist = distToStart;
+                            bestSnapTime = clip.start_time;
+                        }
+                    }
+                    dropTime = bestSnapTime;
+                }
+                
+                // Use the actual dragging asset info if available
+                const trackObj = project.tracks.find(t => t.id === trackId);
+                const assetType = draggingAsset?.type || (trackObj?.type === 'video' ? 'video' : 'audio');
+                
+                // Use the actual duration from the dragging asset
+                const actualDuration = draggingAsset?.duration || 5;
+                const isValid = !checkOverlap(trackId, dropTime, dropTime + actualDuration) &&
+                                (trackObj?.type === assetType || 
+                                 (assetType === 'audio' && (trackObj?.type === 'av' || trackObj?.type === 'audio')));
+                
+                setDropPreview({
+                    trackId,
+                    startTime: dropTime,
+                    duration: actualDuration,
+                    type: assetType,
+                    isValid
+                });
+            }
+            
+            e.dataTransfer.dropEffect = 'copy';
+        } catch (err) {
+            // Ignore parsing errors during dragover
+        }
+    };
+
+    // Handle drag leave
+    const handleTrackDragLeave = (e: React.DragEvent) => {
+        // Only clear if leaving the track area entirely
+        const relatedTarget = e.relatedTarget as HTMLElement;
+        if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
+            setDropPreview(null);
+        }
+    };
+
+    // Handle drop
+    const handleTrackDrop = (e: React.DragEvent, trackId: string) => {
+        e.preventDefault();
+        
+        try {
+            const data = e.dataTransfer.getData('application/json');
+            if (!data) return;
+            
+            const asset: UploadResponse = JSON.parse(data);
+            
+            // Calculate final drop position
+            if (timelineRef.current) {
+                const rect = timelineRef.current.getBoundingClientRect();
+                const offset = e.clientX - rect.left + timelineRef.current.scrollLeft - 32;
+                let dropTime = Math.max(0, offset / PIXELS_PER_SECOND);
+                
+                // Snap logic
+                const track = project.tracks.find(t => t.id === trackId);
+                if (track) {
+                    let bestSnapTime = dropTime;
+                    let minDist = SNAP_THRESHOLD_PX / PIXELS_PER_SECOND;
+                    
+                    if (dropTime < minDist) {
+                        bestSnapTime = 0;
+                        minDist = dropTime;
+                    }
+                    
+                    for (const clip of track.clips) {
+                        const distToEnd = Math.abs(dropTime - clip.end_time);
+                        if (distToEnd < minDist) {
+                            minDist = distToEnd;
+                            bestSnapTime = clip.end_time;
+                        }
+                    }
+                    dropTime = bestSnapTime;
+                }
+                
+                // Check for overlaps with actual duration
+                const endTime = dropTime + asset.duration;
+                const targetTrack = getTargetTrack(asset.type, trackId);
+                
+                if (!targetTrack) {
+                    console.warn('No valid target track for asset type:', asset.type);
+                    setDropPreview(null);
+                    return;
+                }
+                
+                // Validate track compatibility
+                if (asset.type === 'video' && targetTrack.type !== 'video') {
+                    alert('Videos can only be dropped on the Video track (V)');
+                    setDropPreview(null);
+                    return;
+                }
+                
+                if (asset.type === 'audio' && targetTrack.type === 'video') {
+                    alert('Audio cannot be dropped on the Video track');
+                    setDropPreview(null);
+                    return;
+                }
+                
+                if (checkOverlap(targetTrack.id, dropTime, endTime)) {
+                    alert('Cannot place clip here - it would overlap with existing clips');
+                    setDropPreview(null);
+                    return;
+                }
+                
+                // Valid drop - call handler
+                onDropAsset(asset, targetTrack.id, dropTime);
+            }
+        } catch (err) {
+            console.error('Drop failed:', err);
+        }
+        
+        setDropPreview(null);
+    };
 
     const handleRulerMouseDown = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -317,11 +512,42 @@ export function Timeline({ project, onUpdateClip, onDeleteClip, onUnlinkClip, on
                     </div>
 
                     {project.tracks.map(track => (
-                        <div key={track.id} className="mb-2 relative h-12 bg-gray-200 rounded">
+                        <div 
+                            key={track.id} 
+                            className={`mb-2 relative h-12 rounded transition-colors ${
+                                dropPreview?.trackId === track.id 
+                                    ? (dropPreview.isValid ? 'bg-green-100 ring-2 ring-green-400' : 'bg-red-100 ring-2 ring-red-400')
+                                    : 'bg-gray-200'
+                            }`}
+                            onDragOver={(e) => handleTrackDragOver(e, track.id)}
+                            onDragLeave={handleTrackDragLeave}
+                            onDrop={(e) => handleTrackDrop(e, track.id)}
+                        >
                             <div className="absolute left-0 top-0 bottom-0 w-8 bg-gray-300 flex items-center justify-center text-xs z-10">
                                 {track.type === 'video' ? 'V' : track.type === 'av' ? 'AV' : 'A'}
                             </div>
                             <div className="ml-8 relative h-full">
+                                {/* Drop Preview Ghost */}
+                                {dropPreview && dropPreview.trackId === track.id && (
+                                    <div 
+                                        className={`absolute top-1 bottom-1 rounded border-2 border-dashed flex items-center justify-center text-xs font-medium pointer-events-none z-30 ${
+                                            dropPreview.isValid 
+                                                ? 'bg-green-200/50 border-green-500 text-green-700' 
+                                                : 'bg-red-200/50 border-red-500 text-red-700'
+                                        }`}
+                                        style={{
+                                            left: dropPreview.startTime * PIXELS_PER_SECOND,
+                                            width: dropPreview.duration * PIXELS_PER_SECOND,
+                                        }}
+                                    >
+                                        {dropPreview.isValid ? (
+                                            <span>{dropPreview.duration.toFixed(1)}s</span>
+                                        ) : (
+                                            <Ban className="w-4 h-4" />
+                                        )}
+                                    </div>
+                                )}
+                                
                                 {track.clips.map(clip => {
                                     const isSelected = selectedClips.includes(clip.id);
                                     

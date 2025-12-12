@@ -6,6 +6,7 @@ import { Timeline } from '@/components/editor/Timeline';
 import { PreviewPlayer } from '@/components/editor/PreviewPlayer';
 import { useState } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { UploadResponse } from '@/types';
 
 export default function Home() {
   const { 
@@ -15,7 +16,8 @@ export default function Home() {
     isRendering, 
     uploadFile, 
     uploadRecording,
-    addClip, 
+    addClip,
+    addClipAtPosition,
     updateClip,
     deleteClip,
     unlinkClip,
@@ -31,6 +33,7 @@ export default function Home() {
 
   const [currentTime, setCurrentTime] = useState(0);
   const [aspectRatio, setAspectRatio] = useState("16/9");
+  const [draggingAsset, setDraggingAsset] = useState<UploadResponse | null>(null);
 
   return (
     <main className="flex h-screen w-full flex-col bg-white text-black">
@@ -82,6 +85,8 @@ export default function Home() {
             onAddShapeOverlay={addShapeOverlay}
             onUpdateShapeOverlay={updateShapeOverlay}
             onDeleteShapeOverlay={deleteShapeOverlay}
+            onDragStart={setDraggingAsset}
+            onDragEnd={() => setDraggingAsset(null)}
         />
 
         {/* Right: Preview & Timeline */}
@@ -106,8 +111,10 @@ export default function Home() {
                     onUnlinkClip={unlinkClip}
                     onSplitClip={splitClip}
                     onMergeClips={mergeClips}
+                    onDropAsset={addClipAtPosition}
                     onSeek={setCurrentTime}
                     currentTime={currentTime}
+                    draggingAsset={draggingAsset}
                 />
             </div>
         </div>
