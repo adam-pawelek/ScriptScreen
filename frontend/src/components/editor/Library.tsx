@@ -56,6 +56,196 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
         'Palatino'
     ];
 
+    // Tailwind color palette - designer recommended colors
+    const tailwindColors: { name: string; shades: { shade: string; hex: string }[] }[] = [
+        {
+            name: 'Slate',
+            shades: [
+                { shade: '50', hex: '#f8fafc' }, { shade: '100', hex: '#f1f5f9' }, { shade: '200', hex: '#e2e8f0' },
+                { shade: '300', hex: '#cbd5e1' }, { shade: '400', hex: '#94a3b8' }, { shade: '500', hex: '#64748b' },
+                { shade: '600', hex: '#475569' }, { shade: '700', hex: '#334155' }, { shade: '800', hex: '#1e293b' },
+                { shade: '900', hex: '#0f172a' }, { shade: '950', hex: '#020617' }
+            ]
+        },
+        {
+            name: 'Red',
+            shades: [
+                { shade: '50', hex: '#fef2f2' }, { shade: '100', hex: '#fee2e2' }, { shade: '200', hex: '#fecaca' },
+                { shade: '300', hex: '#fca5a5' }, { shade: '400', hex: '#f87171' }, { shade: '500', hex: '#ef4444' },
+                { shade: '600', hex: '#dc2626' }, { shade: '700', hex: '#b91c1c' }, { shade: '800', hex: '#991b1b' },
+                { shade: '900', hex: '#7f1d1d' }, { shade: '950', hex: '#450a0a' }
+            ]
+        },
+        {
+            name: 'Orange',
+            shades: [
+                { shade: '50', hex: '#fff7ed' }, { shade: '100', hex: '#ffedd5' }, { shade: '200', hex: '#fed7aa' },
+                { shade: '300', hex: '#fdba74' }, { shade: '400', hex: '#fb923c' }, { shade: '500', hex: '#f97316' },
+                { shade: '600', hex: '#ea580c' }, { shade: '700', hex: '#c2410c' }, { shade: '800', hex: '#9a3412' },
+                { shade: '900', hex: '#7c2d12' }, { shade: '950', hex: '#431407' }
+            ]
+        },
+        {
+            name: 'Yellow',
+            shades: [
+                { shade: '50', hex: '#fefce8' }, { shade: '100', hex: '#fef9c3' }, { shade: '200', hex: '#fef08a' },
+                { shade: '300', hex: '#fde047' }, { shade: '400', hex: '#facc15' }, { shade: '500', hex: '#eab308' },
+                { shade: '600', hex: '#ca8a04' }, { shade: '700', hex: '#a16207' }, { shade: '800', hex: '#854d0e' },
+                { shade: '900', hex: '#713f12' }, { shade: '950', hex: '#422006' }
+            ]
+        },
+        {
+            name: 'Green',
+            shades: [
+                { shade: '50', hex: '#f0fdf4' }, { shade: '100', hex: '#dcfce7' }, { shade: '200', hex: '#bbf7d0' },
+                { shade: '300', hex: '#86efac' }, { shade: '400', hex: '#4ade80' }, { shade: '500', hex: '#22c55e' },
+                { shade: '600', hex: '#16a34a' }, { shade: '700', hex: '#15803d' }, { shade: '800', hex: '#166534' },
+                { shade: '900', hex: '#14532d' }, { shade: '950', hex: '#052e16' }
+            ]
+        },
+        {
+            name: 'Cyan',
+            shades: [
+                { shade: '50', hex: '#ecfeff' }, { shade: '100', hex: '#cffafe' }, { shade: '200', hex: '#a5f3fc' },
+                { shade: '300', hex: '#67e8f9' }, { shade: '400', hex: '#22d3ee' }, { shade: '500', hex: '#06b6d4' },
+                { shade: '600', hex: '#0891b2' }, { shade: '700', hex: '#0e7490' }, { shade: '800', hex: '#155e75' },
+                { shade: '900', hex: '#164e63' }, { shade: '950', hex: '#083344' }
+            ]
+        },
+        {
+            name: 'Blue',
+            shades: [
+                { shade: '50', hex: '#eff6ff' }, { shade: '100', hex: '#dbeafe' }, { shade: '200', hex: '#bfdbfe' },
+                { shade: '300', hex: '#93c5fd' }, { shade: '400', hex: '#60a5fa' }, { shade: '500', hex: '#3b82f6' },
+                { shade: '600', hex: '#2563eb' }, { shade: '700', hex: '#1d4ed8' }, { shade: '800', hex: '#1e40af' },
+                { shade: '900', hex: '#1e3a8a' }, { shade: '950', hex: '#172554' }
+            ]
+        },
+        {
+            name: 'Violet',
+            shades: [
+                { shade: '50', hex: '#f5f3ff' }, { shade: '100', hex: '#ede9fe' }, { shade: '200', hex: '#ddd6fe' },
+                { shade: '300', hex: '#c4b5fd' }, { shade: '400', hex: '#a78bfa' }, { shade: '500', hex: '#8b5cf6' },
+                { shade: '600', hex: '#7c3aed' }, { shade: '700', hex: '#6d28d9' }, { shade: '800', hex: '#5b21b6' },
+                { shade: '900', hex: '#4c1d95' }, { shade: '950', hex: '#2e1065' }
+            ]
+        },
+        {
+            name: 'Pink',
+            shades: [
+                { shade: '50', hex: '#fdf2f8' }, { shade: '100', hex: '#fce7f3' }, { shade: '200', hex: '#fbcfe8' },
+                { shade: '300', hex: '#f9a8d4' }, { shade: '400', hex: '#f472b6' }, { shade: '500', hex: '#ec4899' },
+                { shade: '600', hex: '#db2777' }, { shade: '700', hex: '#be185d' }, { shade: '800', hex: '#9d174d' },
+                { shade: '900', hex: '#831843' }, { shade: '950', hex: '#500724' }
+            ]
+        }
+    ];
+
+    // Quick pick colors (most commonly used)
+    const quickColors = [
+        '#ffffff', '#000000', '#ef4444', '#f97316', '#eab308', 
+        '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'
+    ];
+
+    // State for showing color palette popups
+    const [showColorPalette, setShowColorPalette] = useState<string | null>(null);
+
+    // Color Picker Component with Tailwind Palette
+    const ColorPickerWithPalette = ({ 
+        value, 
+        onChange, 
+        id 
+    }: { 
+        value: string; 
+        onChange: (color: string) => void; 
+        id: string;
+    }) => (
+        <div className="relative">
+            <div className="flex gap-1 items-center">
+                <input
+                    type="color"
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    className="w-8 h-6 border rounded cursor-pointer"
+                    title="Custom color picker"
+                />
+                <button
+                    type="button"
+                    onClick={() => setShowColorPalette(showColorPalette === id ? null : id)}
+                    className="flex-1 h-6 px-2 text-[10px] border rounded hover:bg-gray-100 flex items-center justify-center gap-1"
+                    title="Show recommended colors"
+                >
+                    <span className="w-3 h-3 rounded-sm border" style={{ backgroundColor: value }}></span>
+                    Palette
+                </button>
+            </div>
+            
+            {showColorPalette === id && (
+                <div className="fixed z-[9999] bg-white border rounded-lg shadow-2xl p-3 w-64" style={{ marginLeft: '60px', marginTop: '-10px' }}>
+                    <div className="text-[10px] text-gray-500 mb-2 font-medium">
+                        ✨ Designer-recommended colors from Tailwind
+                    </div>
+                    
+                    {/* Quick Pick Row */}
+                    <div className="mb-2">
+                        <div className="text-[9px] text-gray-400 mb-1">Quick Pick</div>
+                        <div className="flex gap-1">
+                            {quickColors.map(color => (
+                                <button
+                                    key={color}
+                                    type="button"
+                                    onClick={() => { onChange(color); setShowColorPalette(null); }}
+                                    className={`w-5 h-5 rounded border-2 hover:scale-110 transition-transform ${
+                                        value === color ? 'border-blue-500 ring-1 ring-blue-300' : 'border-gray-300'
+                                    }`}
+                                    style={{ backgroundColor: color }}
+                                    title={color}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                    
+                    {/* Full Palette */}
+                    <div className="max-h-48 overflow-y-auto">
+                        {tailwindColors.map(colorGroup => (
+                            <div key={colorGroup.name} className="mb-1">
+                                <div className="text-[9px] text-gray-400 mb-0.5">{colorGroup.name}</div>
+                                <div className="flex gap-0.5">
+                                    {colorGroup.shades.filter((_, i) => i % 2 === 0 || i === colorGroup.shades.length - 1).map(shade => (
+                                        <button
+                                            key={shade.hex}
+                                            type="button"
+                                            onClick={() => { onChange(shade.hex); setShowColorPalette(null); }}
+                                            className={`w-4 h-4 rounded-sm border hover:scale-125 transition-transform ${
+                                                value === shade.hex ? 'border-blue-500 ring-1 ring-blue-300' : 'border-gray-200'
+                                            }`}
+                                            style={{ backgroundColor: shade.hex }}
+                                            title={`${colorGroup.name} ${shade.shade}`}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    
+                    <div className="mt-2 pt-2 border-t">
+                        <div className="text-[9px] text-gray-400">
+                            Or use the color picker for custom colors
+                        </div>
+                    </div>
+                    
+                    <button 
+                        type="button"
+                        onClick={() => setShowColorPalette(null)}
+                        className="absolute top-1 right-1 text-gray-400 hover:text-gray-600 p-1"
+                    >
+                        <X className="w-3 h-3" />
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+
     // Text overlay form state
     const [newText, setNewText] = useState('');
     const [newStartTime, setNewStartTime] = useState(0);
@@ -634,11 +824,10 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
                             </div>
                             <div>
                                 <label className="text-[10px] text-gray-500">Color</label>
-                                <input
-                                    type="color"
-                                    value={newColor}
-                                    onChange={(e) => setNewColor(e.target.value)}
-                                    className="w-full h-6 border rounded cursor-pointer"
+                                <ColorPickerWithPalette 
+                                    value={newColor} 
+                                    onChange={setNewColor} 
+                                    id="new-text-color" 
                                 />
                             </div>
                         </div>
@@ -733,11 +922,10 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
                                         </div>
                                         <div>
                                             <label className="text-[10px] text-gray-500">Color</label>
-                                            <input
-                                                type="color"
-                                                value={editColor}
-                                                onChange={(e) => setEditColor(e.target.value)}
-                                                className="w-full h-6 border rounded cursor-pointer"
+                                            <ColorPickerWithPalette 
+                                                value={editColor} 
+                                                onChange={setEditColor} 
+                                                id="edit-text-color" 
                                             />
                                         </div>
                                     </div>
@@ -907,11 +1095,10 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
                             </div>
                             <div>
                                 <label className="text-[10px] text-gray-500">Color</label>
-                                <input
-                                    type="color"
-                                    value={newShapeColor}
-                                    onChange={(e) => setNewShapeColor(e.target.value)}
-                                    className="w-full h-6 border rounded cursor-pointer"
+                                <ColorPickerWithPalette 
+                                    value={newShapeColor} 
+                                    onChange={setNewShapeColor} 
+                                    id="new-shape-color" 
                                 />
                             </div>
                         </div>
@@ -1033,11 +1220,10 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
                                         </div>
                                         <div>
                                             <label className="text-[10px] text-gray-500">Color</label>
-                                            <input
-                                                type="color"
-                                                value={editShapeColor}
-                                                onChange={(e) => setEditShapeColor(e.target.value)}
-                                                className="w-full h-6 border rounded cursor-pointer"
+                                            <ColorPickerWithPalette 
+                                                value={editShapeColor} 
+                                                onChange={setEditShapeColor} 
+                                                id="edit-shape-color" 
                                             />
                                         </div>
                                     </div>
