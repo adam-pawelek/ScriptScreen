@@ -39,23 +39,23 @@ export default function Home() {
   return (
     <main className="flex h-screen w-full flex-col bg-white text-black">
       {/* Header */}
-      <header className="h-12 border-b flex items-center px-4 bg-gray-50 flex-shrink-0 justify-between">
-        <h1 className="font-bold text-lg">Video Editor (Server-Side Preview)</h1>
+      <header className="h-12 border-b flex items-center px-4 bg-gray-50 shrink-0 justify-between">
+        <h1 className="font-bold text-lg">Video Editor</h1>
         
         <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500 font-medium">Aspect Ratio:</span>
-            <Select value={aspectRatio} onValueChange={setAspectRatio}>
-                <SelectTrigger className="w-[120px] h-8 text-xs">
-                    <SelectValue placeholder="Ratio" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="16/9">16:9 (Widescreen)</SelectItem>
-                    <SelectItem value="9/16">9:16 (Vertical)</SelectItem>
-                    <SelectItem value="4/3">4:3 (Classic)</SelectItem>
-                    <SelectItem value="1/1">1:1 (Square)</SelectItem>
-                    <SelectItem value="21/9">21:9 (Ultrawide)</SelectItem>
-                </SelectContent>
-            </Select>
+          <span className="text-xs text-gray-500 font-medium">Aspect Ratio:</span>
+          <Select value={aspectRatio} onValueChange={setAspectRatio}>
+            <SelectTrigger className="w-[120px] h-8 text-xs">
+              <SelectValue placeholder="Ratio" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="16/9">16:9 (Widescreen)</SelectItem>
+              <SelectItem value="9/16">9:16 (Vertical)</SelectItem>
+              <SelectItem value="4/3">4:3 (Classic)</SelectItem>
+              <SelectItem value="1/1">1:1 (Square)</SelectItem>
+              <SelectItem value="21/9">21:9 (Ultrawide)</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </header>
 
@@ -66,7 +66,7 @@ export default function Home() {
             items={library} 
             textOverlays={project.text_overlays}
             shapeOverlays={project.shape_overlays}
-            onUpload={uploadFile} 
+            onUpload={uploadFile}
             onAddToTimeline={(item) => {
                 let trackId = 'video-track-1';
                 if (item.type === 'audio') {

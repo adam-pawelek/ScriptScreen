@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { UploadResponse, TextOverlay, ShapeOverlay } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Mic, Square, Plus, Trash2, Type, Pencil, Check, X, ArrowRight, Minus, Settings } from 'lucide-react';
+import { Plus, Trash2, Pencil, Check, X, ArrowRight, Minus, Type, Mic, Square, Settings, Upload } from 'lucide-react';
 
 interface LibraryProps {
     items: UploadResponse[];
@@ -22,21 +22,113 @@ interface LibraryProps {
 }
 
 export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToTimeline, onRecordAudio, onAddTextOverlay, onUpdateTextOverlay, onDeleteTextOverlay, onAddShapeOverlay, onUpdateShapeOverlay, onDeleteShapeOverlay, onDragStart, onDragEnd }: LibraryProps) {
+    // Recording state
     const [isRecording, setIsRecording] = useState(false);
+    const [showRecordingSettings, setShowRecordingSettings] = useState(false);
+    const [recordingVolume, setRecordingVolume] = useState(100);
+    const [noiseReduction, setNoiseReduction] = useState(50);
+    const [tempVolume, setTempVolume] = useState(100);
+    const [tempNoiseReduction, setTempNoiseReduction] = useState(50);
+
+    // Recording refs
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const audioContextRef = useRef<AudioContext | null>(null);
-    const gainNodeRef = useRef<GainNode | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
 
-    // Recording settings state
-    const [showRecordingSettings, setShowRecordingSettings] = useState(false);
-    const [recordingVolume, setRecordingVolume] = useState(100); // 0-200%
-    const [noiseReduction, setNoiseReduction] = useState(50);    // 0-100%
-    
-    // Temp values for settings modal
-    const [tempVolume, setTempVolume] = useState(100);
-    const [tempNoiseReduction, setTempNoiseReduction] = useState(50);
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            onUpload(e.target.files[0]);
+        }
+    };
+
+    const openRecordingSettings = () => {
+        setTempVolume(recordingVolume);
+        setTempNoiseReduction(noiseReduction);
+        setShowRecordingSettings(true);
+    };
+
+    const saveRecordingSettings = () => {
+        setRecordingVolume(tempVolume);
+        setNoiseReduction(tempNoiseReduction);
+        setShowRecordingSettings(false);
+    };
+
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    autoGainControl: noiseReduction > 0,
+                    noiseSuppression: noiseReduction > 30,
+                    echoCancellation: noiseReduction > 50,
+                    channelCount: 1,
+                    sampleRate: 48000
+                } 
+            });
+            
+            streamRef.current = stream;
+            const audioContext = new AudioContext();
+            audioContextRef.current = audioContext;
+            
+            const source = audioContext.createMediaStreamSource(stream);
+            const gainNode = audioContext.createGain();
+            gainNode.gain.value = recordingVolume / 100;
+            
+            const destination = audioContext.createMediaStreamDestination();
+            
+            if (noiseReduction > 20) {
+                const highpassFilter = audioContext.createBiquadFilter();
+                highpassFilter.type = 'highpass';
+                highpassFilter.frequency.value = 80 + (noiseReduction * 0.5);
+                source.connect(highpassFilter);
+                highpassFilter.connect(gainNode);
+            } else {
+                source.connect(gainNode);
+            }
+            
+            gainNode.connect(destination);
+            
+            const mediaRecorder = new MediaRecorder(destination.stream);
+            mediaRecorderRef.current = mediaRecorder;
+            audioChunksRef.current = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunksRef.current.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                
+                if (streamRef.current) {
+                    streamRef.current.getTracks().forEach(track => track.stop());
+                    streamRef.current = null;
+                }
+                if (audioContextRef.current) {
+                    audioContextRef.current.close();
+                    audioContextRef.current = null;
+                }
+                
+                await onRecordAudio(audioBlob);
+                setIsRecording(false);
+            };
+
+            mediaRecorder.start();
+            setIsRecording(true);
+        } catch (err) {
+            console.error('Error accessing microphone:', err);
+            alert('Could not access microphone. Please ensure you have granted permission.');
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && isRecording) {
+            if (mediaRecorderRef.current.state !== 'inactive') {
+                mediaRecorderRef.current.stop();
+            }
+        }
+    };
 
     // Available fonts (common system fonts)
     const availableFonts = [
@@ -292,119 +384,6 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
     const [editShapeColor, setEditShapeColor] = useState('#ffffff');
     const [editShapeWidth, setEditShapeWidth] = useState(3);
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            onUpload(e.target.files[0]);
-        }
-    };
-
-    const openRecordingSettings = () => {
-        setTempVolume(recordingVolume);
-        setTempNoiseReduction(noiseReduction);
-        setShowRecordingSettings(true);
-    };
-
-    const saveRecordingSettings = () => {
-        setRecordingVolume(tempVolume);
-        setNoiseReduction(tempNoiseReduction);
-        setShowRecordingSettings(false);
-    };
-
-    const cancelRecordingSettings = () => {
-        setShowRecordingSettings(false);
-    };
-
-    const startRecording = async () => {
-        try {
-            // Use MediaStream constraints for noise suppression
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                audio: {
-                    autoGainControl: noiseReduction > 0,
-                    noiseSuppression: noiseReduction > 30,
-                    echoCancellation: noiseReduction > 50,
-                    channelCount: 1,
-                    sampleRate: 48000
-                } 
-            });
-            
-            // Store stream reference for cleanup
-            streamRef.current = stream;
-
-            // Set up Web Audio API for volume control
-            const audioContext = new AudioContext();
-            audioContextRef.current = audioContext;
-            
-            const source = audioContext.createMediaStreamSource(stream);
-            const gainNode = audioContext.createGain();
-            gainNodeRef.current = gainNode;
-            
-            // Set gain based on volume setting (100 = 1.0, 200 = 2.0, etc.)
-            gainNode.gain.value = recordingVolume / 100;
-            
-            // Create a destination to capture the processed audio
-            const destination = audioContext.createMediaStreamDestination();
-            
-            // Optional: Add high-pass filter if noise reduction is enabled
-            if (noiseReduction > 20) {
-                const highpassFilter = audioContext.createBiquadFilter();
-                highpassFilter.type = 'highpass';
-                highpassFilter.frequency.value = 80 + (noiseReduction * 0.5); // 80-130Hz based on setting
-                source.connect(highpassFilter);
-                highpassFilter.connect(gainNode);
-            } else {
-                source.connect(gainNode);
-            }
-            
-            gainNode.connect(destination);
-            
-            // Record from the processed stream
-            const mediaRecorder = new MediaRecorder(destination.stream);
-            mediaRecorderRef.current = mediaRecorder;
-            audioChunksRef.current = [];
-
-            mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) {
-                    audioChunksRef.current.push(event.data);
-                }
-            };
-
-            mediaRecorder.onstop = async () => {
-                // Create blob from collected chunks
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                
-                // Clean up stream and audio context AFTER recorder has stopped
-                if (streamRef.current) {
-                    streamRef.current.getTracks().forEach(track => track.stop());
-                    streamRef.current = null;
-                }
-                if (audioContextRef.current) {
-                    audioContextRef.current.close();
-                    audioContextRef.current = null;
-                }
-                
-                // Upload the recording - backend will fix WebM duration metadata
-                await onRecordAudio(audioBlob);
-                setIsRecording(false);
-            };
-
-            // Start recording
-            mediaRecorder.start();
-            setIsRecording(true);
-        } catch (err) {
-            console.error('Error accessing microphone:', err);
-            alert('Could not access microphone. Please ensure you have granted permission.');
-        }
-    };
-
-    const stopRecording = () => {
-        if (mediaRecorderRef.current && isRecording) {
-            // Just stop the recorder - cleanup happens in onstop callback
-            if (mediaRecorderRef.current.state !== 'inactive') {
-                mediaRecorderRef.current.stop();
-            }
-        }
-    };
-
     const handleAddText = () => {
         if (!newText.trim()) {
             alert('Please enter some text');
@@ -531,61 +510,14 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
 
     return (
         <div className="w-64 border-r p-4 flex flex-col h-full relative">
-            <h2 className="text-xl font-bold mb-4">Library</h2>
-            <div className="mb-4 flex flex-col gap-2">
-                <input 
-                    type="file" 
-                    onChange={handleFileChange} 
-                    className="hidden" 
-                    id="file-upload" 
-                />
-                <Button asChild className="w-full">
-                    <label htmlFor="file-upload">Upload Media</label>
-                </Button>
-                
-                <div className="flex gap-1">
-                    <Button 
-                        onClick={() => isRecording ? stopRecording() : startRecording()}
-                        variant={isRecording ? "destructive" : "outline"}
-                        className={`flex-1 ${isRecording ? 'animate-pulse' : ''}`}
-                    >
-                        {isRecording ? (
-                            <>
-                                <Square className="w-4 h-4 mr-2" />
-                                Stop Recording
-                            </>
-                        ) : (
-                            <>
-                                <Mic className="w-4 h-4 mr-2" />
-                                Record Audio
-                            </>
-                        )}
-                    </Button>
-                    <Button
-                        onClick={openRecordingSettings}
-                        variant="ghost"
-                        size="icon"
-                        className="flex-shrink-0"
-                        title="Recording Settings"
-                        disabled={isRecording}
-                    >
-                        <Settings className="w-4 h-4" />
-                    </Button>
-                </div>
-                <div className="text-[9px] text-gray-400 text-right -mt-1 cursor-pointer hover:text-gray-600" onClick={openRecordingSettings}>
-                    Recording Settings
-                </div>
-            </div>
-
             {/* Recording Settings Modal */}
             {showRecordingSettings && (
-                <div className="absolute inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-lg shadow-xl p-4 w-full max-w-[240px]">
-                        <h3 className="font-semibold text-sm mb-3">Recording Settings</h3>
+                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
+                    <div className="bg-white rounded-lg shadow-xl p-6 w-80">
+                        <h3 className="font-semibold text-lg mb-4">Recording Settings</h3>
                         
-                        {/* Volume Control */}
                         <div className="mb-4">
-                            <label className="text-xs text-gray-600 block mb-1">
+                            <label className="text-sm text-gray-600 block mb-2">
                                 Volume Gain: {tempVolume}%
                             </label>
                             <div className="flex gap-2 items-center">
@@ -603,17 +535,14 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
                                     max="200"
                                     value={tempVolume}
                                     onChange={(e) => setTempVolume(Math.min(200, Math.max(0, parseInt(e.target.value) || 0)))}
-                                    className="w-14 p-1 text-xs border rounded text-center"
+                                    className="w-16 p-1 text-sm border rounded text-center"
                                 />
                             </div>
-                            <p className="text-[10px] text-gray-400 mt-1">
-                                100% = normal, 200% = 2x boost
-                            </p>
+                            <p className="text-xs text-gray-400 mt-1">100% = normal, 200% = 2x boost</p>
                         </div>
                         
-                        {/* Noise Reduction Control */}
-                        <div className="mb-4">
-                            <label className="text-xs text-gray-600 block mb-1">
+                        <div className="mb-6">
+                            <label className="text-sm text-gray-600 block mb-2">
                                 Noise Reduction: {tempNoiseReduction}%
                             </label>
                             <div className="flex gap-2 items-center">
@@ -631,21 +560,18 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
                                     max="100"
                                     value={tempNoiseReduction}
                                     onChange={(e) => setTempNoiseReduction(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
-                                    className="w-14 p-1 text-xs border rounded text-center"
+                                    className="w-16 p-1 text-sm border rounded text-center"
                                 />
                             </div>
-                            <p className="text-[10px] text-gray-400 mt-1">
-                                Higher = more noise filtering
-                            </p>
+                            <p className="text-xs text-gray-400 mt-1">Higher = more noise filtering</p>
                         </div>
                         
-                        {/* Buttons */}
                         <div className="flex gap-2">
-                            <Button onClick={saveRecordingSettings} size="sm" className="flex-1">
-                                <Check className="w-3 h-3 mr-1" /> Save
+                            <Button onClick={saveRecordingSettings} className="flex-1">
+                                <Check className="w-4 h-4 mr-1" /> Save
                             </Button>
-                            <Button onClick={cancelRecordingSettings} size="sm" variant="outline" className="flex-1">
-                                <X className="w-3 h-3 mr-1" /> Cancel
+                            <Button onClick={() => setShowRecordingSettings(false)} variant="outline" className="flex-1">
+                                <X className="w-4 h-4 mr-1" /> Cancel
                             </Button>
                         </div>
                     </div>
@@ -664,6 +590,21 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
                     </TabsList>
                 </div>
                 <TabsContent value="videos" className="flex-1 overflow-y-auto">
+                    {/* Upload Media Button */}
+                    <div className="mb-3">
+                        <input 
+                            type="file" 
+                            onChange={handleFileChange} 
+                            className="hidden" 
+                            id="video-file-upload" 
+                        />
+                        <Button asChild className="w-full" size="sm">
+                            <label htmlFor="video-file-upload" className="cursor-pointer flex items-center justify-center">
+                                <Upload className="w-4 h-4 mr-2" />
+                                Upload Media
+                            </label>
+                        </Button>
+                    </div>
                     {videos.map(item => (
                          <div 
                              key={item.id} 
@@ -706,6 +647,54 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
                     ))}
                 </TabsContent>
                 <TabsContent value="audios" className="flex-1 overflow-y-auto">
+                    {/* Upload Media Button */}
+                    <div className="mb-2">
+                        <input 
+                            type="file" 
+                            onChange={handleFileChange} 
+                            className="hidden" 
+                            id="audio-file-upload" 
+                        />
+                        <Button asChild className="w-full" size="sm">
+                            <label htmlFor="audio-file-upload" className="cursor-pointer flex items-center justify-center">
+                                <Upload className="w-4 h-4 mr-2" />
+                                Upload Media
+                            </label>
+                        </Button>
+                    </div>
+                    
+                    {/* Record Audio Button */}
+                    <div className="mb-3 flex gap-1">
+                        <Button 
+                            onClick={() => isRecording ? stopRecording() : startRecording()}
+                            variant={isRecording ? "destructive" : "outline"}
+                            size="sm"
+                            className={`flex-1 ${isRecording ? 'animate-pulse' : ''}`}
+                        >
+                            {isRecording ? (
+                                <>
+                                    <Square className="w-3 h-3 mr-1" />
+                                    Stop Recording
+                                </>
+                            ) : (
+                                <>
+                                    <Mic className="w-3 h-3 mr-1" />
+                                    Record Audio
+                                </>
+                            )}
+                        </Button>
+                        <Button
+                            onClick={openRecordingSettings}
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            title="Recording Settings"
+                            disabled={isRecording}
+                        >
+                            <Settings className="w-4 h-4" />
+                        </Button>
+                    </div>
+                    
                     {audios.map(item => (
                          <div 
                              key={item.id} 
