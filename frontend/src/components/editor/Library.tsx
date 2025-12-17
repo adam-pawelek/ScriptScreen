@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { UploadResponse, TextOverlay, ShapeOverlay } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, Trash2, Pencil, Check, X, ArrowRight, Minus, Type, Mic, Square, Settings, Upload } from 'lucide-react';
+import { Plus, Trash2, Pencil, Check, X, ArrowRight, Minus, Type, Mic, Square, Settings, Upload, Monitor, Video } from 'lucide-react';
 
 interface AudioDevice {
     deviceId: string;
@@ -40,11 +40,25 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
     const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
     const [tempDeviceId, setTempDeviceId] = useState<string>('');
 
-    // Recording refs
+    // Audio recording refs
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const audioContextRef = useRef<AudioContext | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
+
+    // Screen recording state
+    const [isScreenRecording, setIsScreenRecording] = useState(false);
+    const [showScreenRecordingSettings, setShowScreenRecordingSettings] = useState(false);
+    const [screenRecordingMicId, setScreenRecordingMicId] = useState<string>('');
+    const [tempScreenMicId, setTempScreenMicId] = useState<string>('');
+    const [includeAudio, setIncludeAudio] = useState(true);
+    const [tempIncludeAudio, setTempIncludeAudio] = useState(true);
+
+    // Screen recording refs
+    const screenRecorderRef = useRef<MediaRecorder | null>(null);
+    const screenChunksRef = useRef<Blob[]>([]);
+    const screenStreamRef = useRef<MediaStream | null>(null);
+    const micStreamRef = useRef<MediaStream | null>(null);
 
     // Load available audio devices
     const loadAudioDevices = async () => {
@@ -177,6 +191,117 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
         if (mediaRecorderRef.current && isRecording) {
             if (mediaRecorderRef.current.state !== 'inactive') {
                 mediaRecorderRef.current.stop();
+            }
+        }
+    };
+
+    // Screen Recording Settings
+    const openScreenRecordingSettings = () => {
+        setTempScreenMicId(screenRecordingMicId);
+        setTempIncludeAudio(includeAudio);
+        loadAudioDevices();
+        setShowScreenRecordingSettings(true);
+    };
+
+    const saveScreenRecordingSettings = () => {
+        setScreenRecordingMicId(tempScreenMicId);
+        setIncludeAudio(tempIncludeAudio);
+        setShowScreenRecordingSettings(false);
+    };
+
+    const startScreenRecording = async () => {
+        try {
+            // Get screen/display stream
+            const screenStream = await navigator.mediaDevices.getDisplayMedia({
+                video: {
+                    displaySurface: 'monitor'
+                },
+                audio: false // We'll handle audio separately for better control
+            });
+
+            screenStreamRef.current = screenStream;
+            
+            let combinedStream = screenStream;
+
+            // If audio is enabled, get microphone stream and combine
+            if (includeAudio) {
+                try {
+                    // Use specific device if selected, otherwise use default microphone
+                    const audioConstraints: MediaTrackConstraints = screenRecordingMicId 
+                        ? { deviceId: { exact: screenRecordingMicId } }
+                        : true;
+                    
+                    const micStream = await navigator.mediaDevices.getUserMedia({
+                        audio: audioConstraints
+                    });
+                    micStreamRef.current = micStream;
+
+                    // Combine video from screen and audio from mic
+                    const tracks = [
+                        ...screenStream.getVideoTracks(),
+                        ...micStream.getAudioTracks()
+                    ];
+                    combinedStream = new MediaStream(tracks);
+                } catch (micErr) {
+                    console.warn('Could not access microphone for screen recording:', micErr);
+                    // Continue with screen only
+                }
+            }
+
+            const screenRecorder = new MediaRecorder(combinedStream, {
+                mimeType: 'video/webm;codecs=vp9'
+            });
+            screenRecorderRef.current = screenRecorder;
+            screenChunksRef.current = [];
+
+            screenRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    screenChunksRef.current.push(event.data);
+                }
+            };
+
+            screenRecorder.onstop = async () => {
+                const videoBlob = new Blob(screenChunksRef.current, { type: 'video/webm' });
+                
+                // Clean up streams
+                if (screenStreamRef.current) {
+                    screenStreamRef.current.getTracks().forEach(track => track.stop());
+                    screenStreamRef.current = null;
+                }
+                if (micStreamRef.current) {
+                    micStreamRef.current.getTracks().forEach(track => track.stop());
+                    micStreamRef.current = null;
+                }
+
+                // Create a File object from the blob
+                const file = new File([videoBlob], `screen-recording-${Date.now()}.webm`, {
+                    type: 'video/webm'
+                });
+                
+                // Upload the recording
+                onUpload(file);
+                setIsScreenRecording(false);
+            };
+
+            // Handle when user stops sharing via browser UI
+            screenStream.getVideoTracks()[0].onended = () => {
+                if (isScreenRecording) {
+                    stopScreenRecording();
+                }
+            };
+
+            screenRecorder.start();
+            setIsScreenRecording(true);
+        } catch (err) {
+            console.error('Error starting screen recording:', err);
+            alert('Could not start screen recording. Please ensure you have granted permission.');
+        }
+    };
+
+    const stopScreenRecording = () => {
+        if (screenRecorderRef.current && isScreenRecording) {
+            if (screenRecorderRef.current.state !== 'inactive') {
+                screenRecorderRef.current.stop();
             }
         }
     };
@@ -657,6 +782,72 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
                 </div>
             )}
 
+            {/* Screen Recording Settings Modal */}
+            {showScreenRecordingSettings && (
+                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
+                    <div className="bg-white rounded-lg shadow-xl p-6 w-96">
+                        <h3 className="font-semibold text-lg mb-4">
+                            <Monitor className="w-5 h-5 inline mr-2" />
+                            Screen Recording Settings
+                        </h3>
+                        
+                        <p className="text-sm text-gray-500 mb-4">
+                            When you start recording, your browser will ask you to select which screen or window to record.
+                        </p>
+                        
+                        {/* Include Audio Toggle */}
+                        <div className="mb-4">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={tempIncludeAudio}
+                                    onChange={(e) => setTempIncludeAudio(e.target.checked)}
+                                    className="w-4 h-4 rounded"
+                                />
+                                <span className="text-sm text-gray-700">Include microphone audio</span>
+                            </label>
+                        </div>
+                        
+                        {/* Microphone Selection (only shown if audio is enabled) */}
+                        {tempIncludeAudio && (
+                            <div className="mb-4">
+                                <label className="text-sm text-gray-600 block mb-2">
+                                    <Mic className="w-4 h-4 inline mr-1" />
+                                    Microphone
+                                </label>
+                                <select
+                                    value={tempScreenMicId}
+                                    onChange={(e) => setTempScreenMicId(e.target.value)}
+                                    className="w-full p-2 text-sm border rounded bg-white"
+                                >
+                                    {audioDevices.length === 0 ? (
+                                        <option value="">Loading microphones...</option>
+                                    ) : (
+                                        audioDevices.map(device => (
+                                            <option key={device.deviceId} value={device.deviceId}>
+                                                {device.label}
+                                            </option>
+                                        ))
+                                    )}
+                                </select>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    {audioDevices.length} microphone{audioDevices.length !== 1 ? 's' : ''} available
+                                </p>
+                            </div>
+                        )}
+                        
+                        <div className="flex gap-2">
+                            <Button onClick={saveScreenRecordingSettings} className="flex-1">
+                                <Check className="w-4 h-4 mr-1" /> Save
+                            </Button>
+                            <Button onClick={() => setShowScreenRecordingSettings(false)} variant="outline" className="flex-1">
+                                <X className="w-4 h-4 mr-1" /> Cancel
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <Tabs defaultValue="videos" className="w-full flex-1 flex flex-col min-h-0">
                 <div className="space-y-1 mb-2">
                     <TabsList className="w-full">
@@ -670,7 +861,7 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
                 </div>
                 <TabsContent value="videos" className="flex-1 overflow-y-auto">
                     {/* Upload Media Button */}
-                    <div className="mb-3">
+                    <div className="mb-2">
                         <input 
                             type="file" 
                             onChange={handleFileChange} 
@@ -684,6 +875,39 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
                             </label>
                         </Button>
                     </div>
+                    
+                    {/* Record Screen Button */}
+                    <div className="mb-3 flex gap-1">
+                        <Button 
+                            onClick={() => isScreenRecording ? stopScreenRecording() : startScreenRecording()}
+                            variant={isScreenRecording ? "destructive" : "outline"}
+                            size="sm"
+                            className={`flex-1 ${isScreenRecording ? 'animate-pulse' : ''}`}
+                        >
+                            {isScreenRecording ? (
+                                <>
+                                    <Square className="w-3 h-3 mr-1" />
+                                    Stop Recording
+                                </>
+                            ) : (
+                                <>
+                                    <Monitor className="w-3 h-3 mr-1" />
+                                    Record Screen
+                                </>
+                            )}
+                        </Button>
+                        <Button
+                            onClick={openScreenRecordingSettings}
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            title="Screen Recording Settings"
+                            disabled={isScreenRecording}
+                        >
+                            <Settings className="w-4 h-4" />
+                        </Button>
+                    </div>
+                    
                     {videos.map(item => (
                          <div 
                              key={item.id} 

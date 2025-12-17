@@ -2,7 +2,25 @@ import ffmpeg
 import os
 import uuid
 import math
+import subprocess
+import json
 from models import Project
+
+def has_audio_stream(file_path: str) -> bool:
+    """Check if a media file has an audio stream using ffprobe."""
+    try:
+        result = subprocess.run(
+            ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams', file_path],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode != 0:
+            return False
+        data = json.loads(result.stdout)
+        streams = data.get('streams', [])
+        return any(s.get('codec_type') == 'audio' for s in streams)
+    except Exception:
+        return False
 
 def render_project(project: Project, output_path: str, preset: str = 'ultrafast', crf: int = 28):
     """
@@ -118,6 +136,11 @@ def render_project(project: Project, output_path: str, preset: str = 'ultrafast'
     for track in audio_tracks:
         for clip in track.clips:
             if not os.path.exists(clip.source_path):
+                continue
+            
+            # Check if the file actually has an audio stream
+            if not has_audio_stream(clip.source_path):
+                print(f"Warning: Skipping audio processing for {clip.source_path} - no audio stream found")
                 continue
                 
             duration = clip.end_time - clip.start_time
