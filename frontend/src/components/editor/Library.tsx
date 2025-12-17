@@ -1,8 +1,13 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { UploadResponse, TextOverlay, ShapeOverlay } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Plus, Trash2, Pencil, Check, X, ArrowRight, Minus, Type, Mic, Square, Settings, Upload } from 'lucide-react';
+
+interface AudioDevice {
+    deviceId: string;
+    label: string;
+}
 
 interface LibraryProps {
     items: UploadResponse[];
@@ -30,11 +35,48 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
     const [tempVolume, setTempVolume] = useState(100);
     const [tempNoiseReduction, setTempNoiseReduction] = useState(50);
 
+    // Microphone selection state
+    const [audioDevices, setAudioDevices] = useState<AudioDevice[]>([]);
+    const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+    const [tempDeviceId, setTempDeviceId] = useState<string>('');
+
     // Recording refs
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const audioContextRef = useRef<AudioContext | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
+
+    // Load available audio devices
+    const loadAudioDevices = async () => {
+        try {
+            // Request permission first to get device labels
+            await navigator.mediaDevices.getUserMedia({ audio: true });
+            
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const audioInputs = devices
+                .filter(device => device.kind === 'audioinput')
+                .map((device, index) => ({
+                    deviceId: device.deviceId,
+                    label: device.label || `Microphone ${index + 1}`
+                }));
+            
+            setAudioDevices(audioInputs);
+            
+            // Set default device if none selected
+            if (!selectedDeviceId && audioInputs.length > 0) {
+                setSelectedDeviceId(audioInputs[0].deviceId);
+            }
+        } catch (err) {
+            console.error('Error loading audio devices:', err);
+        }
+    };
+
+    // Load devices when settings modal opens
+    useEffect(() => {
+        if (showRecordingSettings) {
+            loadAudioDevices();
+        }
+    }, [showRecordingSettings]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
@@ -45,25 +87,34 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
     const openRecordingSettings = () => {
         setTempVolume(recordingVolume);
         setTempNoiseReduction(noiseReduction);
+        setTempDeviceId(selectedDeviceId);
         setShowRecordingSettings(true);
     };
 
     const saveRecordingSettings = () => {
         setRecordingVolume(tempVolume);
         setNoiseReduction(tempNoiseReduction);
+        setSelectedDeviceId(tempDeviceId);
         setShowRecordingSettings(false);
     };
 
     const startRecording = async () => {
         try {
+            const audioConstraints: MediaTrackConstraints = {
+                autoGainControl: noiseReduction > 0,
+                noiseSuppression: noiseReduction > 30,
+                echoCancellation: noiseReduction > 50,
+                channelCount: 1,
+                sampleRate: 48000
+            };
+            
+            // Use selected device if available
+            if (selectedDeviceId) {
+                audioConstraints.deviceId = { exact: selectedDeviceId };
+            }
+            
             const stream = await navigator.mediaDevices.getUserMedia({ 
-                audio: {
-                    autoGainControl: noiseReduction > 0,
-                    noiseSuppression: noiseReduction > 30,
-                    echoCancellation: noiseReduction > 50,
-                    channelCount: 1,
-                    sampleRate: 48000
-                } 
+                audio: audioConstraints
             });
             
             streamRef.current = stream;
@@ -513,9 +564,36 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
             {/* Recording Settings Modal */}
             {showRecordingSettings && (
                 <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
-                    <div className="bg-white rounded-lg shadow-xl p-6 w-80">
+                    <div className="bg-white rounded-lg shadow-xl p-6 w-96">
                         <h3 className="font-semibold text-lg mb-4">Recording Settings</h3>
                         
+                        {/* Microphone Selection */}
+                        <div className="mb-4">
+                            <label className="text-sm text-gray-600 block mb-2">
+                                <Mic className="w-4 h-4 inline mr-1" />
+                                Microphone
+                            </label>
+                            <select
+                                value={tempDeviceId}
+                                onChange={(e) => setTempDeviceId(e.target.value)}
+                                className="w-full p-2 text-sm border rounded bg-white"
+                            >
+                                {audioDevices.length === 0 ? (
+                                    <option value="">Loading microphones...</option>
+                                ) : (
+                                    audioDevices.map(device => (
+                                        <option key={device.deviceId} value={device.deviceId}>
+                                            {device.label}
+                                        </option>
+                                    ))
+                                )}
+                            </select>
+                            <p className="text-xs text-gray-400 mt-1">
+                                {audioDevices.length} microphone{audioDevices.length !== 1 ? 's' : ''} available
+                            </p>
+                        </div>
+                        
+                        {/* Volume Control */}
                         <div className="mb-4">
                             <label className="text-sm text-gray-600 block mb-2">
                                 Volume Gain: {tempVolume}%
@@ -541,6 +619,7 @@ export function Library({ items, textOverlays, shapeOverlays, onUpload, onAddToT
                             <p className="text-xs text-gray-400 mt-1">100% = normal, 200% = 2x boost</p>
                         </div>
                         
+                        {/* Noise Reduction Control */}
                         <div className="mb-6">
                             <label className="text-sm text-gray-600 block mb-2">
                                 Noise Reduction: {tempNoiseReduction}%
